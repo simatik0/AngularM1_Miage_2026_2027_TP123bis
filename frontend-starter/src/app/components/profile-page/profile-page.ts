@@ -1,7 +1,21 @@
-import { Component, inject, signal } from '@angular/core';
+import { AbstractControl, Component, inject, signal, ValidationErrors, ValidatorFn } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { finalize } from 'rxjs';
 import { AuthService } from '../../shared/services/auth.service';
+
+function trimmedMinLength(minimumLength: number): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const value = typeof control.value === 'string' ? control.value : '';
+    if (!value) {
+      return null;
+    }
+
+    const actualLength = value.trim().length;
+    return actualLength >= minimumLength
+      ? null
+      : { trimmedMinlength: { requiredLength: minimumLength, actualLength } };
+  };
+}
 
 @Component({
   imports: [ReactiveFormsModule],
@@ -16,7 +30,7 @@ export class ProfilePageComponent {
   readonly form = new FormGroup({
     name: new FormControl('', {
       nonNullable: true,
-      validators: [Validators.required, Validators.pattern(/\S/)],
+      validators: [Validators.required, trimmedMinLength(2)],
     }),
   });
 

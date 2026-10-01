@@ -30,7 +30,6 @@ export class LoginPageComponent {
 
     if (this.form.invalid) {
       this.form.markAllAsTouched();
-      this.error.set('Veuillez saisir une adresse email et un mot de passe valides.');
       return;
     }
 

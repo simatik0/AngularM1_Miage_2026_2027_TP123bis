@@ -12,8 +12,8 @@
         <p class="error">
           @if (form.controls.name.hasError('required')) {
             Le nom est obligatoire.
-          } @else {
-            Le nom ne peut pas être composé uniquement d’espaces.
+          } @else if (form.controls.name.hasError('trimmedMinlength')) {
+            Le nom doit contenir au moins 2 caractères après suppression des espaces inutiles.
           }
         </p>
       }
