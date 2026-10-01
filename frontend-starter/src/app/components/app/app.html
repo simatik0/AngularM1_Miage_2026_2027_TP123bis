@@ -1,0 +1,30 @@
+<header class="site-header">
+  <div class="brand">
+    <b>Guitar Practice Cloud</b>
+    <small>Le cloud qui manque à votre ampli</small>
+  </div>
+  <nav class="main-nav" aria-label="Navigation principale">
+    @if (auth.isAuthenticated()) {
+      <a routerLink="/tracks">Backing tracks</a>
+      <a routerLink="/profile">Profil</a>
+      @if (auth.currentUser(); as user) {
+        <span class="user-badge">{{ user.name || user.email }}</span>
+      }
+      <button class="button button--logout" type="button" (click)="logout()">Se déconnecter</button>
+    } @else {
+      <a class="button button--ghost" routerLink="/login">Connexion</a>
+      <a class="button button--primary" routerLink="/register">Inscription</a>
+    }
+  </nav>
+</header>
+
+@if (logoutError()) {
+  <p class="error" role="alert">{{ logoutError() }}</p>
+}
+@if (auth.sessionError()) {
+  <p class="error" role="alert">{{ auth.sessionError() }}</p>
+}
+
+<main>
+  <router-outlet />
+</main>
