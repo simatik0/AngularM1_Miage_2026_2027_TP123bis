@@ -166,15 +166,39 @@ et [capture du profil](./preuves/tp1/profil-interface.png).
 | Schéma annoté | Présent ci-dessus |
 | Signal et localStorage | Explication présente ci-dessus |
 | Rapport IA | Actualisé avec les actions et résultats réellement observés |
-| Capture Network d'authentification | Reste à ajouter ; le relevé HTTP et la capture d'interface ne sont pas une capture DevTools |
+| Capture Network d'authentification | Ajoutée ci-dessous, avec les captures de connexion refusée et de modification du profil |
 
-## Dernière preuve à joindre
+## Captures Network — 7 octobre 2026
 
-Ouvrir les DevTools, onglet Network, filtre Fetch/XHR. Observer une connexion
-réussie, une refusée et une lecture ou modification du profil. Relever méthode,
-URL, corps JSON, statut, réponse et présence d'Authorization. Masquer les mots
-de passe et les JWT avant toute capture, puis ajouter les images au dossier
-`preuves/tp1/` et les lier ici. Ne jamais exposer l'URI MongoDB ou le secret JWT.
+Les trois captures suivantes ont été fournies par l'étudiant et intégrées au
+rapport avec l'aide de l'assistant IA. Elles montrent l'application sur
+`http://localhost:4200` et les détails des requêtes dans l'onglet Network.
+
+### Connexion réussie
+
+La requête `POST /api/auth/login` retourne **200 OK**. L'application affiche
+la bibliothèque et l'état connecté après la connexion.
+
+![Connexion réussie : POST /api/auth/login, statut 200 OK](./preuves/tp1/network-connexion-reussie.png)
+
+### Connexion refusée
+
+La requête `POST /api/auth/login` retourne **401 Unauthorized**. L'utilisateur
+reste sur la page de connexion et le message « Identifiants incorrects » apparaît.
+
+![Connexion refusée : POST /api/auth/login, statut 401 Unauthorized](./preuves/tp1/network-connexion-refusee.png)
+
+### Modification du profil
+
+La requête `PUT /api/users/me` retourne **200 OK**. Le nom modifié apparaît
+dans le profil et l'en-tête, avec le message « Votre nom a bien été mis à jour. ».
+
+![Modification du profil : PUT /api/users/me, statut 200 OK](./preuves/tp1/network-modification-profil.png)
+
+Ces captures montrent les méthodes, URL et statuts. Les corps JSON et le header
+`Authorization` ne sont pas visibles dans les zones capturées ; les observations
+HTTP antérieures sont détaillées dans le [compte rendu](./preuves/tp1/verification.md).
+Aucun mot de passe en clair ni JWT n'est visible dans ces trois images.
 
 Chaque membre du binôme doit également pouvoir expliquer le flux, les fichiers
 impliqués et les modifications avec ses propres mots. Le modèle réellement
