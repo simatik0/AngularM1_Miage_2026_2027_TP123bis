@@ -138,98 +138,45 @@ Le Signal n'est donc pas un stockage durable, et `localStorage` ne met pas tout
 seul l'interface à jour. Ils se complètent : l'un sert à l'interface en cours,
 l'autre conserve le jeton entre deux chargements.
 
-## État des livrables TP1 et vérifications
+## État des livrables TP1 — mise à jour du 7 octobre 2026
 
-| Livrable demandé | État constaté |
+Les imports `AbstractControl`, `ValidationErrors` et `ValidatorFn` des pages
+inscription et profil ont été corrigés pour provenir de `@angular/forms`.
+L'assistant a installé les dépendances, ajouté jsdom, configuré la cible de test
+et séparé la compilation de l'application de celle des tests. Six tests
+vérifient connexion, inscription, modification du profil, refus de connexion,
+nettoyage après 401, déconnexion en erreur et restauration de session.
+
+Résultats : compilation Angular réussie, 6 tests frontend réussis, 3 tests
+backend réussis. Les tests frontend simulent l'API ; les tests backend existants
+ne nécessitent pas de connexion MongoDB.
+
+Les parcours réels ont ensuite été exercés dans le navigateur sur le frontend
+de cette branche, port 4201, avec le backend existant sur le port 3000.
+Inscription, connexion acceptée/refusée, lecture et modification du profil,
+persistance après rechargement, déconnexion et rejet d'un jeton invalide ont
+fonctionné. L'hébergement Atlas de la base n'a pas été vérifié.
+
+Preuves et détails : [compte rendu des vérifications](./preuves/tp1/verification.md)
+et [capture du profil](./preuves/tp1/profil-interface.png).
+
+| Livrable | État |
 |---|---|
-| Code frontend complété | Les pages et le service d'authentification sont présents. Les validations frontend ont été complétées. L'exécution réelle contre MongoDB reste à vérifier par l'étudiant. |
-| Schéma annoté du flux de connexion | Présent ci-dessus. |
-| Preuve Network d'authentification | À réaliser manuellement : aucune capture navigateur n'a été créée ou vérifiée par l'assistant. |
-| Explication Signal / `localStorage` | Présente ci-dessus. |
-| Rapport d'usage de l'IA | Complété dans ce document. |
+| Code frontend | Corrigé, compilé et parcours principaux vérifiés |
+| Schéma annoté | Présent ci-dessus |
+| Signal et localStorage | Explication présente ci-dessus |
+| Rapport IA | Actualisé avec les actions et résultats réellement observés |
+| Capture Network d'authentification | Reste à ajouter ; le relevé HTTP et la capture d'interface ne sont pas une capture DevTools |
 
-Vérifications réellement effectuées pendant le travail assisté :
+## Dernière preuve à joindre
 
-- lecture du sujet TP1, du contrat HTTP et des fichiers frontend/backend cités
-  dans ce rapport ;
-- vérification du chemin de code : les méthodes `submit()` retournent avant
-  l'appel au service si le formulaire est invalide ;
-- `git diff --check` a réussi après les changements des validations frontend.
+Ouvrir les DevTools, onglet Network, filtre Fetch/XHR. Observer une connexion
+réussie, une refusée et une lecture ou modification du profil. Relever méthode,
+URL, corps JSON, statut, réponse et présence d'Authorization. Masquer les mots
+de passe et les JWT avant toute capture, puis ajouter les images au dossier
+`preuves/tp1/` et les lier ici. Ne jamais exposer l'URI MongoDB ou le secret JWT.
 
-La compilation Angular n'est pas confirmée : la commande `npm run build` n'a pas
-pu démarrer, car les dépendances du frontend (dont `@angular/build`) n'étaient
-pas installées dans l'environnement au moment de l'essai. Aucun scénario n'a été
-exécuté dans le navigateur avec MongoDB Atlas pendant ce travail. Il faut donc
-faire les vérifications manuelles ci-dessous avant de déclarer ces parcours
-validés en exécution.
-
-## Captures Network à réaliser manuellement
-
-Aucune capture n'est incluse pour l'instant. Créer le dossier `preuves/tp1/` à
-la racine du projet et y enregistrer les captures suivantes. Les liens ci-dessous
-sont des emplacements prévus : ils ne pointeront vers une preuve qu'après que
-l'étudiant aura créé et ajouté les images.
-
-- Connexion réussie : [preuves/tp1/connexion-reussie.png](./preuves/tp1/connexion-reussie.png)
-- Connexion refusée : [preuves/tp1/connexion-refusee.png](./preuves/tp1/connexion-refusee.png)
-- Lecture du profil : [preuves/tp1/profil-get.png](./preuves/tp1/profil-get.png)
-- Modification du profil (recommandé) : [preuves/tp1/profil-put.png](./preuves/tp1/profil-put.png)
-
-Procédure Chrome ou Edge :
-
-1. Démarrer le backend et le frontend selon le README, puis ouvrir
-   `http://localhost:4200`.
-2. Ouvrir les DevTools avec `F12` (ou clic droit > **Inspecter**), puis choisir
-   l'onglet **Network** / **Réseau**.
-3. Cocher **Preserve log** / **Conserver le journal** si disponible. Cliquer sur
-   le filtre **Fetch/XHR**. Effacer les anciennes requêtes avec l'icône
-   d'effacement avant chaque scénario.
-4. **Connexion réussie** : ouvrir la page de connexion, entrer des identifiants
-   valides et soumettre le formulaire. Dans Network, sélectionner la ligne
-   `login` ou `/api/auth/login`. Dans **Headers / En-têtes**, relever
-   `Request Method: POST`, l'URL et le `Status Code` (attendu : `200`). Dans
-   **Payload / Charge utile**, le corps JSON est visible. Dans **Response /
-   Réponse**, la réponse contient l'utilisateur et le JWT. Le mot de passe du
-   payload et la valeur entière du JWT de la réponse doivent être masqués avant
-   toute capture.
-5. **Connexion refusée** : se déconnecter si nécessaire, revenir à la connexion
-   et saisir un email de test et un mot de passe volontairement incorrect.
-   Sélectionner `/api/auth/login`, puis regarder **Headers** (attendu : statut
-   `401`) et **Response** (message d'identifiants incorrects). Masquer tout de
-   même le mot de passe présent dans le payload.
-6. **Lecture du profil** : une fois connecté, ouvrir **Profil**. Sélectionner la
-   ligne `users/me` de méthode `GET`. Dans **Headers**, vérifier la méthode,
-   l'URL, le statut `200` et la présence d'un en-tête `Authorization` commençant
-   par `Bearer`. Masquer la valeur complète après `Bearer`.
-7. **Modification du profil** : changer le nom et enregistrer. Sélectionner la
-   ligne `users/me` de méthode `PUT`. Vérifier le statut `200`, le corps de
-   requête contenant le nom et l'en-tête `Authorization`. Masquer le JWT et
-   toute donnée personnelle que l'étudiant ne souhaite pas partager.
-8. Enregistrer les images dans `preuves/tp1/` avec les noms indiqués plus haut,
-   puis vérifier que les liens correspondants ci-dessus s'ouvrent dans le
-   dépôt.
-
-Ne jamais laisser apparaître dans une capture un mot de passe, un JWT complet,
-le secret JWT ou l'URI MongoDB. Les captures doivent montrer les détails utiles
-sans exposer ces valeurs.
-
-## Ce que l'étudiant doit encore vérifier
-
-- Démarrer le backend avec son propre fichier `.env` sans en partager le contenu.
-- Démarrer le frontend et vérifier que le proxy vise le bon port du backend.
-- Faire les scénarios réels d'inscription, connexion réussie/refusée, chargement
-  et modification du profil, puis déconnexion.
-- Vérifier les statuts et les échanges dans Network et joindre les captures
-  anonymisées prévues ci-dessus.
-- Vérifier que la compilation fonctionne après installation des dépendances du
-  projet.
-- Être capable d'expliquer le schéma et les concepts avec ses propres mots.
-
-## Notes de sécurité pour le rendu
-
-- Ne jamais inclure de JWT réel, mot de passe, secret JWT ou URI MongoDB dans ce
-  rapport ou dans une capture.
-- Le JWT est un jeton d'accès : une personne qui le possède peut potentiellement
-  agir comme le compte jusqu'à son expiration ou sa révocation.
-- Le navigateur envoie le JWT dans l'en-tête `Authorization: Bearer <jeton>` sur
-  les routes protégées ; la valeur réelle ne doit pas être partagée.
+Chaque membre du binôme doit également pouvoir expliquer le flux, les fichiers
+impliqués et les modifications avec ses propres mots. Le modèle réellement
+utilisé et la consommation de tokens sont à relever dans l'outil de l'étudiant ;
+aucun chiffre de consommation n'a été inventé dans ce rapport.
