@@ -1,1 +1,30 @@
 :host { display: block; }
+
+.library-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
+.library, .upload-card { min-width: 0; }
+h2 { margin-top: 0; }
+.upload-card form { gap: 0.65rem; }
+label { margin: 0.4rem 0 0; }
+input { width: 100%; min-width: 0; font: inherit; }
+small, .filename, dt { color: #4b6059; }
+.success { color: #175b36; }
+.row { flex-wrap: wrap; margin-bottom: 1rem; }
+.row h2 { margin: 0; }
+.track-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 1rem; }
+.track-card { display: flex; flex-direction: column; padding: 1rem; border: 1px solid #c8d9d1; border-radius: 12px; background: #f8fbf9; }
+.track-card h3 { margin: 0 0 0.5rem; }
+.filename { margin: 0; font-size: 0.9rem; }
+h3, .filename, dd, .error, .success { overflow-wrap: anywhere; }
+dl { margin: 1rem 0; font-size: 0.9rem; }
+dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.25rem 0.6rem; margin-bottom: 0.5rem; }
+dd { margin: 0; }
+.track-card button { margin-top: auto; }
+.pager { flex-wrap: wrap; justify-content: center; }
+.pager span { text-align: center; }
+.player { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #c8d9d1; }
+.player h3 { margin-top: 0; }
+input:focus-visible, button:focus-visible, audio:focus-visible { outline: 3px solid #17312a; outline-offset: 3px; }
+
+@media (max-width: 800px) {
+  .library-layout { grid-template-columns: minmax(0, 1fr); }
+}
