@@ -1,4 +1,4 @@
-# Rapport d'usage de l'IA — TP1 et TD2
+# Rapport d'usage de l'IA — TP1, TD2 et TD3
 
 ## Utilisation de l'assistant IA
 
@@ -247,9 +247,9 @@ la valeur du jeton n’est pas visible dans la capture.
 ![Network : lecture audio authentifiée, statut 200 et réponse audio/mpeg](./preuves/tp2/lecture-network-authentifiee.png)
 
 L’assistant a installé les dépendances déjà déclarées et lancé les applications
-pour les essais. Il n’a ajouté aucune dépendance au projet. Les options
-Material, Mongoose, progression, suppression, filtre et couverture n’ont pas
-été implémentées ; le formatage des tailles et des dates a été retenu.
+pour les essais. Aucune dépendance n’a été ajoutée au projet. Les missions
+progression d’upload et suppression de piste sont détaillées dans la section
+TD3 ci-dessous.
 
 ### Vérification et correction pendant les essais
 
@@ -283,3 +283,53 @@ ce qui rend les contrôles serveur indispensables.
 Le document a été produit avec assistance et doit être relu et compris par
 l’étudiant. Aucun volume de tokens ni coût n’est inventé ; ces informations
 restent à relever dans l’interface de l’outil si l’enseignant les demande.
+
+## TD3 — Suppression, progression et tests — 8 octobre 2026
+
+### Étapes et réalisations
+
+| Étape de validation | Réalisation / preuve |
+|---|---|
+| Relire le sujet et le contrat HTTP | `DELETE /api/tracks/:id` reste inchangé et exige le JWT. |
+| Supprimer depuis une card sans HTTP dans le composant | La page demande confirmation et délègue à `TrackService.delete()`. |
+| Éviter les doubles suppressions | L’identifiant de la piste en cours désactive les actions jusqu’à la fin de la requête. |
+| Rafraîchir la bibliothèque | Après suppression confirmée, la liste est rechargée ; si la dernière piste d’une page a disparu, la page précédente est demandée. |
+| Gérer la concurrence et les erreurs | Le `404` (piste absente ou appartenant à quelqu’un d’autre selon le contrat) retire la piste périmée de l’affichage et déclenche un rechargement ; les autres erreurs conservent la piste et affichent un snackbar d’erreur. |
+| Afficher les retours de suppression | Nouveau composant Angular accessible, avec rôles `status`/`alert` et bouton de fermeture. Il n’ajoute pas Angular Material ni de dépendance externe. |
+| Suivre l’envoi du fichier | `TrackService.upload()` demande les événements HTTP et active `reportProgress`; l’interface calcule `floor(loaded / total * 100)`, borne le résultat à 100 %, et affiche une barre accessible. |
+| Gérer les états d’upload | Le composant distingue l’inactivité, l’envoi avec pourcentage, la réussite, l’absence de réponse utile et l’échec HTTP. Le titre, le fichier et la soumission sont indisponibles pendant l’envoi. |
+| Tester sans backend/MongoDB | Tests Angular avec `HttpTestingController`; les requêtes, événements de progression et réponses sont simulés. |
+| Vérifier le backend existant | `npm test` du backend : 5 tests réussis, dont suppression propriétaire, suppression du fichier audio et restauration en cas d’échec Mongo simulé. Aucun code backend n’a été modifié. |
+| Compiler le frontend | `npm run build` : réussite (résultat de la présente session). |
+
+Le résultat automatisé complet est consigné dans le
+[compte rendu des vérifications TD3](./preuves/tp3/verification.md).
+Les captures navigateur fournies montrent un `DELETE` réel en `204` et un
+rechargement `GET` en `200`; les copies intégrées ont leurs zones d’en-têtes
+masquées. Elles ne suffisent cependant pas à prouver que la carte supprimée a
+disparu de la réponse affichée; cette correspondance reste à vérifier. La
+capture Network réelle d’un upload (`POST` en `201`) reste à ajouter.
+
+### Explications pour la restitution
+
+- **Service et contrôle d’accès :** `TracksPageComponent` déclenche l’action
+  mais ne construit pas la requête ; `TrackService` centralise l’URL et la
+  méthode HTTP et l’intercepteur ajoute le JWT. Le guard ne protège que la
+  navigation Angular et une interface peut être contournée. Le backend vérifie
+  le JWT puis cherche une piste avec son identifiant **et** `ownerId` égal à
+  l’utilisateur authentifié ; une piste inconnue ou étrangère donne `404`.
+- **Pourcentage :** Angular émet un événement `UploadProgress` contenant les
+  octets envoyés (`loaded`) et le total (`total`). Le composant divise ces
+  valeurs, convertit en pourcentage entier et borne la valeur à 100. Une
+  requête qui n’émet qu’une réponse finale ne fournit pas ces événements
+  intermédiaires ; elle ne permet donc pas d’actualiser la barre pendant le
+  transfert.
+- **Tests sans MongoDB :** `HttpTestingController` intercepte les appels
+  Angular avant le réseau et injecte des événements/réponses déterministes.
+  Les tests vérifient les contrats HTTP et le comportement du composant, pas la
+  connexion à la base.
+- **Unitaire et intégration :** le test unitaire cible un service ou un
+  composant avec ses dépendances remplacées ; un test d’intégration vérifie
+  plusieurs composants réels ensemble (par exemple navigateur, API et base).
+  Les tests HTTP Angular ici sont isolés et reproductibles, et ne constituent
+  pas un parcours d’intégration réel.

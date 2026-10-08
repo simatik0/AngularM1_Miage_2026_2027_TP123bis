@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideHttpClient, withInterceptors } from '@angular/common/http';
+import { HttpEventType, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router } from '@angular/router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -8,7 +8,7 @@ import { Track } from '../../shared/models/track.model';
 import { AuthService } from '../../shared/services/auth.service';
 import { TracksPageComponent } from './tracks-page';
 
-describe('Bibliothèque TD2 (API simulée)', () => {
+describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
   let fixture: ComponentFixture<TracksPageComponent>;
   let component: TracksPageComponent;
   let http: HttpTestingController;
@@ -120,7 +120,46 @@ describe('Bibliothèque TD2 (API simulée)', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('ont été supprimés');
+    expect(fixture.nativeElement.querySelector('.snack-bar[role="status"]')).not.toBeNull();
     expect(component.deletingTrackId()).toBeNull();
+    fixture.nativeElement.querySelector('.snack-bar button').click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.snack-bar')).toBeNull();
+  });
+
+  it('traite une suppression devenue obsolète comme une actualisation, sans laisser la piste dans la liste', () => {
+    list(1, 2);
+    component.go(2);
+    list(2, 2, [track]);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    component.delete(track);
+    http.expectOne('/api/tracks/track-1').flush(
+      { message: 'Piste inconnue' },
+      { status: 404, statusText: 'Not Found' },
+    );
+    list(1, 1, [{ ...track, id: 'track-2', title: 'Jazz' }]);
+    fixture.detectChanges();
+
+    expect(component.tracks()[0].title).toBe('Jazz');
+    expect(component.page()).toBe(1);
+    expect(component.deleteSuccess()).toContain('n’est plus disponible');
+    expect(fixture.nativeElement.querySelector('.snack-bar[role="status"]')).not.toBeNull();
+  });
+
+  it('signale une erreur serveur de suppression sans retirer localement la piste', () => {
+    list();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    component.delete(track);
+    http.expectOne('/api/tracks/track-1').flush(
+      { message: 'Suppression impossible' },
+      { status: 500, statusText: 'Server Error' },
+    );
+    fixture.detectChanges();
+
+    expect(component.tracks()).toEqual([track]);
+    expect(component.deleteError()).toBe('Suppression impossible');
+    expect(fixture.nativeElement.querySelector('.snack-bar[role="alert"]')).not.toBeNull();
+    http.expectNone(request => request.url === '/api/tracks?page=1&limit=5');
   });
 
   it('permet de naviguer dans la piste avec la barre de progression et affiche le temps', () => {
@@ -201,6 +240,12 @@ describe('Bibliothèque TD2 (API simulée)', () => {
     expect(body.get('audio')).toBeInstanceOf(File);
     expect(body.get('title')).toBe('Mon blues');
     expect(request.request.headers.has('Content-Type')).toBe(false);
+    expect(request.request.reportProgress).toBe(true);
+    request.event({ type: HttpEventType.UploadProgress, loaded: 50, total: 100 });
+    fixture.detectChanges();
+    expect(component.uploadProgress()).toBe(50);
+    expect(fixture.nativeElement.querySelector('[role="progressbar"]').getAttribute('aria-valuenow')).toBe('50');
+    expect(fixture.nativeElement.querySelector('[role="progressbar"] span').style.width).toBe('50%');
     request.flush({ ...track, title: 'Mon blues' });
     list();
     expect(component.page()).toBe(1);

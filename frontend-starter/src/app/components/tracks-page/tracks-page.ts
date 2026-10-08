@@ -1,14 +1,15 @@
 import { DatePipe } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
 import { Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { finalize, Subscription } from 'rxjs';
 import { Track } from '../../shared/models/track.model';
 import { TrackService } from '../../shared/services/track.service';
+import { SnackBarComponent } from '../snack-bar/snack-bar';
 
 @Component({
-  imports: [DatePipe, ReactiveFormsModule],
+  imports: [DatePipe, ReactiveFormsModule, SnackBarComponent],
   templateUrl: './tracks-page.html',
   styleUrl: './tracks-page.css',
 })
@@ -35,6 +36,7 @@ export class TracksPageComponent {
   readonly loading = signal(false);
   readonly listError = signal('');
   readonly uploading = signal(false);
+  readonly uploadProgress = signal<number | null>(null);
   readonly uploadError = signal('');
   readonly uploadSuccess = signal('');
   readonly audioLoading = signal(false);
@@ -118,23 +120,36 @@ export class TracksPageComponent {
     if (!file || this.uploadError()) return;
 
     this.uploading.set(true);
+    this.uploadProgress.set(0);
     const title = this.title.value.trim() || file.name;
     this.title.disable();
     this.service.upload(file, title).pipe(
       takeUntilDestroyed(this.destroyRef),
       finalize(() => {
         this.uploading.set(false);
+        this.uploadProgress.set(null);
         this.title.enable();
       }),
     ).subscribe({
-      next: (track) => {
-        console.debug('[TracksPage] Piste envoyée', track.id);
-        this.title.reset();
-        this.file.set(null);
-        const input = this.fileInput()?.nativeElement;
-        if (input) input.value = '';
-        this.uploadSuccess.set(`« ${track.title} » a bien été ajouté.`);
-        this.load(1);
+      next: (event) => {
+        if (event.type === HttpEventType.UploadProgress) {
+          this.uploadProgress.set(
+            event.total ? Math.min(100, Math.floor((event.loaded / event.total) * 100)) : null,
+          );
+        } else if (event.type === HttpEventType.Response) {
+          const track = event.body;
+          if (!track) {
+            this.uploadError.set('Le serveur a terminé l’envoi sans renvoyer la piste créée.');
+            return;
+          }
+          console.debug('[TracksPage] Piste envoyée', track.id);
+          this.title.reset();
+          this.file.set(null);
+          const input = this.fileInput()?.nativeElement;
+          if (input) input.value = '';
+          this.uploadSuccess.set(`« ${track.title} » a bien été ajouté.`);
+          this.load(1);
+        }
       },
       error: (error) => {
         this.uploadError.set(this.errorMessage(error, 'Impossible d’envoyer le fichier. Réessayez.'));
@@ -189,8 +204,9 @@ export class TracksPageComponent {
       error: (error: unknown) => {
         if (error instanceof HttpErrorResponse && error.status === 404) {
           this.removeTrackLocally(track);
-          this.deleteSuccess.set(`« ${track.title} » n’existe déjà plus. La bibliothèque a été actualisée.`);
-          this.load(this.page());
+          this.deleteSuccess.set(`« ${track.title} » n’est plus disponible. La bibliothèque a été actualisée.`);
+          const nextPage = this.tracks().length === 1 && this.page() > 1 ? this.page() - 1 : this.page();
+          this.load(nextPage);
           return;
         }
         this.deleteError.set(this.errorMessage(error, 'Impossible de supprimer cette piste. Réessayez.'));

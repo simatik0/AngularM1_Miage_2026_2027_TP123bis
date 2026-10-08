@@ -49,7 +49,14 @@
           <p class="success" role="status">{{ uploadSuccess() }}</p>
         }
         @if (uploading()) {
-          <p role="status">Envoi du fichier en cours…</p>
+          <p role="status">Envoi du fichier en cours… {{ uploadProgress() === null ? '' : uploadProgress() + '%' }}</p>
+          @if (uploadProgress() !== null) {
+            <div class="upload-progress" role="progressbar" aria-label="Progression de l’envoi"
+              aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="uploadProgress()"
+              [attr.aria-valuetext]="uploadProgress() + '%'">
+              <span [style.width.%]="uploadProgress()"></span>
+            </div>
+          }
         }
         <button class="button--wide" type="submit" [disabled]="uploading() || !file()">
           {{ uploading() ? 'Envoi en cours…' : 'Ajouter à ma bibliothèque' }} <span aria-hidden="true">→</span>
@@ -130,10 +137,9 @@
         }
       </div>
       @if (deleteSuccess()) {
-        <p class="success action-message" role="status">{{ deleteSuccess() }}</p>
-      }
-      @if (deleteError()) {
-        <p class="error action-message" role="alert">{{ deleteError() }}</p>
+        <app-snack-bar [message]="deleteSuccess()" type="success" (closed)="deleteSuccess.set('')" />
+      } @else if (deleteError()) {
+        <app-snack-bar [message]="deleteError()" type="error" (closed)="deleteError.set('')" />
       }
 
       <nav class="pager" aria-label="Pagination des pistes">
