@@ -15,6 +15,7 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
   const track: Track = {
     id: 'track-1', title: 'Blues', originalName: 'blues.mp3',
     mimeType: 'audio/mpeg', size: 2048, createdAt: '2026-10-07T12:00:00Z',
+    bpm: 120, key: 'La mineur', tuning: 'E standard', genre: 'Blues', level: 'debutant',
   };
   const createObjectURL = vi.fn();
   const revokeObjectURL = vi.fn();
@@ -28,6 +29,7 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
       static override createObjectURL = createObjectURL;
       static override revokeObjectURL = revokeObjectURL;
     });
+
     TestBed.configureTestingModule({
       imports: [TracksPageComponent],
       providers: [
@@ -41,6 +43,7 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     fixture = TestBed.createComponent(TracksPageComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+    http.expectOne('/api/playlists').flush([]);
   });
 
   afterEach(() => {
@@ -75,10 +78,80 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     component.go(2);
     list(2, 2, [{ ...track, id: 'track-2', title: 'Jazz' }]);
     expect(fixture.nativeElement.textContent).toContain('Jazz');
-    expect(fixture.nativeElement.textContent).not.toContain('Blues');
+    expect(fixture.nativeElement.querySelector('#track-track-1')).toBeNull();
     component.go(3);
     http.expectNone(request => request.url === '/api/tracks');
     expect(component.page()).toBe(2);
+  });
+
+  it('filtre et trie les pistes selon le format et le BPM affiché', () => {
+    const wavTrack: Track = {
+      ...track, id: 'track-2', title: 'Jazz', mimeType: 'audio/x-wav',
+      bpm: 90, createdAt: '2026-10-08T08:00:00Z',
+    };
+    list(1, 1, [track, wavTrack]);
+    component.formatFilter.set('WAV');
+    component.sortOrder.set('bpm');
+    expect(component.visibleTracks().map((item) => item.id)).toEqual(['track-2']);
+    component.formatFilter.set('');
+    component.bpmMinFilter.set('100');
+    component.keyFilter.set('la mineur');
+    expect(component.visibleTracks().map((item) => item.id)).toEqual(['track-1']);
+    component.bpmMinFilter.set('');
+    component.keyFilter.set('');
+    expect(component.visibleTracks().map((item) => item.bpm)).toEqual([90, 120]);
+    expect(fixture.nativeElement.textContent).toContain('120');
+  });
+
+  it('enregistre manuellement le BPM et les informations musicales', () => {
+    list();
+    component.editMetadata(track);
+    component.metadataForm.setValue({
+      bpm: 135, key: 'Mi mineur', tuning: 'Drop D', genre: 'Rock', level: 'intermediaire',
+    });
+    component.saveMetadata(track);
+    const request = http.expectOne('/api/tracks/track-1');
+    expect(request.request.method).toBe('PUT');
+    expect(request.request.body).toEqual({
+      bpm: 135, key: 'Mi mineur', tuning: 'Drop D', genre: 'Rock', level: 'intermediaire',
+    });
+    request.flush({ ...track, bpm: 135, key: 'Mi mineur', tuning: 'Drop D', genre: 'Rock', level: 'intermediaire' });
+    expect(component.tracks()[0].bpm).toBe(135);
+    expect(component.metadataEditTrackId()).toBeNull();
+  });
+
+  it('crée une playlist et y ajoute la piste sélectionnée', () => {
+    list();
+    component.playlistName.set('Répétition');
+    component.createPlaylist();
+    const create = http.expectOne('/api/playlists');
+    expect(create.request.method).toBe('POST');
+    expect(create.request.body).toEqual({ name: 'Répétition' });
+    create.flush({ id: 'playlist-1', name: 'Répétition', trackIds: [], createdAt: track.createdAt });
+    expect(component.selectedPlaylistId()).toBe('playlist-1');
+    component.addToPlaylist(track);
+    const add = http.expectOne('/api/playlists/playlist-1/tracks');
+    expect(add.request.body).toEqual({ trackId: track.id, action: 'add' });
+    add.flush({
+      id: 'playlist-1', name: 'Répétition', trackIds: [track.id], createdAt: track.createdAt,
+    });
+    expect(component.playlists()[0].trackIds).toEqual([track.id]);
+  });
+
+  it('ajoute une piste par clic droit à la file et enchaîne automatiquement', () => {
+    list();
+    fixture.detectChanges();
+    const card = fixture.nativeElement.querySelector('.track-card') as HTMLElement;
+    const contextMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    card.dispatchEvent(contextMenu);
+    expect(contextMenu.defaultPrevented).toBe(true);
+    fixture.detectChanges();
+    expect(component.queue()).toEqual([track]);
+    component.onAudioEnded();
+    expect(component.queue()).toEqual([]);
+    const request = http.expectOne('/api/tracks/track-1/audio');
+    request.flush(new Blob(['audio'], { type: 'audio/mpeg' }));
+    expect(component.currentTrack()?.id).toBe(track.id);
   });
 
   it('montre l’état vide sans télécharger de fichiers audio', () => {
@@ -223,6 +296,8 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     list(2, 2);
     choose();
     component.title.setValue('  Mon blues  ');
+    component.form.controls.bpm.setValue(128);
+    component.form.controls.genre.setValue('Blues');
     const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
     const submit = new Event('submit', { cancelable: true });
     form.dispatchEvent(submit);
@@ -236,9 +311,11 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     const body = request.request.body as FormData;
     const keys: string[] = [];
     body.forEach((_value, key) => keys.push(key));
-    expect(keys).toEqual(['audio', 'title']);
+    expect(keys).toEqual(['audio', 'title', 'bpm', 'genre']);
     expect(body.get('audio')).toBeInstanceOf(File);
     expect(body.get('title')).toBe('Mon blues');
+    expect(body.get('bpm')).toBe('128');
+    expect(body.get('genre')).toBe('Blues');
     expect(request.request.headers.has('Content-Type')).toBe(false);
     expect(request.request.reportProgress).toBe(true);
     request.event({ type: HttpEventType.UploadProgress, loaded: 50, total: 100 });

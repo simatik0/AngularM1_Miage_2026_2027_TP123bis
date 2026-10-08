@@ -12,6 +12,12 @@
 .main-nav > a:not(.button) { padding: 0.55rem 0.85rem; color: var(--muted); font-size: 0.88rem; font-weight: 650; text-decoration: none; border-radius: 0.7rem; transition: color 160ms ease, background 160ms ease; }
 .main-nav > a:not(.button):hover, .main-nav > a.is-active { color: var(--text); background: rgb(244 114 182 / 9%); }
 .user-badge { max-width: 14rem; padding: 0.5rem 0.75rem; overflow: hidden; color: var(--pink-soft); font-size: 0.78rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; background: rgb(244 114 182 / 8%); border: 1px solid rgb(244 114 182 / 22%); border-radius: 999px; }
+.profile-menu { position: relative; }
+.avatar-trigger { display: grid; width: 2.75rem; height: 2.75rem; min-height: 2.75rem; padding: 0; overflow: hidden; place-items: center; color: var(--pink); font-size: 1.25rem; background: var(--surface); border: 2px solid var(--pink); border-radius: 50%; }
+.avatar-trigger img { width: 100%; height: 100%; object-fit: cover; }
+.profile-dropdown { position: absolute; top: calc(100% + 0.6rem); right: 0; z-index: 20; display: grid; min-width: 10rem; padding: 0.4rem; background: var(--surface); border: 1px solid var(--line); border-radius: 0.8rem; box-shadow: 0 12px 30px rgb(0 0 0 / 22%); }
+.profile-dropdown a, .profile-dropdown button { display: block; width: 100%; padding: 0.7rem; color: var(--text); text-align: left; text-decoration: none; background: transparent; border: 0; border-radius: 0.5rem; box-shadow: none; }
+.profile-dropdown a:hover, .profile-dropdown button:hover { color: var(--pink); background: rgb(244 114 182 / 8%); box-shadow: none; }
 .theme-toggle { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.55rem; padding: 0.45rem 0.75rem; color: var(--text); font-size: 0.8rem; font-weight: 700; background: var(--surface); border-color: var(--line); border-radius: 999px; box-shadow: none; }
 .theme-toggle:hover { color: var(--pink-soft); background: var(--surface-soft); border-color: rgb(244 114 182 / 35%); box-shadow: 0 0 22px rgb(244 114 182 / 10%); }
 .theme-toggle__icon { color: var(--pink); font-size: 1.1rem; line-height: 1; }
@@ -26,7 +32,6 @@ main { display: block; max-width: 1320px; min-height: calc(100vh - 142px); margi
   .site-header { align-items: flex-start; flex-wrap: wrap; padding: 0.8rem 1rem; }
   .header-actions { flex: 1 1 100%; justify-content: space-between; gap: 0.5rem; }
   .main-nav { justify-content: flex-start; }
-  .user-badge { display: none; }
   main { min-height: calc(100vh - 175px); }
 }
 @media (max-width: 450px) {

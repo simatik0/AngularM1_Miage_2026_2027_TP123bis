@@ -5,9 +5,27 @@
   <button class="button--refresh profile-refresh" type="button" (click)="load()">↻ Actualiser mon profil</button>
   @if (auth.currentUser(); as user) {
     <div class="profile-summary">
-      <span class="profile-avatar" aria-hidden="true">{{ (user.name || user.email).slice(0, 1).toUpperCase() }}</span>
+      <div class="profile-avatar">
+        @if (auth.avatarUrl(); as avatar) {
+          <img [src]="avatar" alt="Photo de profil" />
+        } @else {
+          <span aria-hidden="true">♪</span>
+        }
+      </div>
       <div><b>{{ user.name }}</b><span>{{ user.email }}</span><small>Membre depuis {{ user.createdAt.slice(0, 10) }}</small></div>
     </div>
+    <section class="avatar-editor">
+      <label for="profile-image">Photo de profil</label>
+      <input #imageInput id="profile-image" type="file" accept="image/jpeg,image/png,image/webp"
+        [disabled]="imageSaving()" (change)="chooseImage($event)" />
+      <small>JPG, PNG ou WebP · 2 Mo maximum. L’image est conservée dans votre base de données.</small>
+      @if (user.hasProfileImage) {
+        <button class="button--refresh" type="button" [disabled]="imageSaving()" (click)="removeImage()">Supprimer la photo</button>
+      }
+      @if (imageError()) {
+        <p class="error" role="alert">{{ imageError() }}</p>
+      }
+    </section>
     <form [formGroup]="form" (ngSubmit)="save()">
       <label>Nouveau nom<input formControlName="name" /></label>
       @if (form.controls.name.touched && form.controls.name.invalid) {
@@ -16,6 +34,13 @@
             Le nom est obligatoire.
           } @else if (form.controls.name.hasError('trimmedMinlength')) {
             Le nom doit contenir au moins 2 caractères après suppression des espaces inutiles.
+          }
+          <label for="profile-bio">Biographie</label>
+          <textarea id="profile-bio" formControlName="bio" rows="4" maxlength="500"
+            placeholder="Quelques mots sur vous et votre pratique musicale…"></textarea>
+          <small>{{ form.controls.bio.value.length }} / 500 caractères</small>
+          @if (form.controls.bio.touched && form.controls.bio.hasError('maxlength')) {
+            <p class="error">La biographie ne peut pas dépasser 500 caractères.</p>
           }
         </p>
       }

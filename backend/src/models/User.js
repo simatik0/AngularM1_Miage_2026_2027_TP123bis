@@ -17,6 +17,10 @@ const schema = new mongoose.Schema(
     },
     // select:false empêche de renvoyer le hash par défaut dans les requêtes.
     passwordHash: { type: String, required: true, select: false },
+    bio: { type: String, trim: true, maxlength: 500, default: "" },
+    hasProfileImage: { type: Boolean, default: false },
+    profileImage: { type: Buffer, select: false },
+    profileImageMimeType: { type: String, select: false },
   },
   { timestamps: true },
 );
@@ -54,6 +58,8 @@ schema.methods.toPublic = function () {
     id: this.id,
     name: this.name,
     email: this.email,
+    bio: this.bio || "",
+    hasProfileImage: this.hasProfileImage,
     createdAt: this.createdAt,
   };
 };

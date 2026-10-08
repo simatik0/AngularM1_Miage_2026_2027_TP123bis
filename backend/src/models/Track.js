@@ -18,6 +18,11 @@ const schema = new mongoose.Schema(
     storedName: { type: String, required: true, select: false },
     mimeType: { type: String, required: true },
     size: { type: Number, required: true, min: 0 },
+    bpm: { type: Number, min: 20, max: 300, default: null },
+    key: { type: String, trim: true, maxlength: 24, default: "" },
+    tuning: { type: String, trim: true, maxlength: 32, default: "" },
+    genre: { type: String, trim: true, maxlength: 40, default: "" },
+    level: { type: String, enum: ["debutant", "intermediaire", "avance", ""], default: "" },
   },
   { timestamps: true },
 );
@@ -38,6 +43,11 @@ schema.methods.toPublic = function () {
     originalName: this.originalName,
     mimeType: this.mimeType,
     size: this.size,
+    bpm: this.bpm ?? null,
+    key: this.key || "",
+    tuning: this.tuning || "",
+    genre: this.genre || "",
+    level: this.level || "",
     createdAt: this.createdAt,
   };
 };

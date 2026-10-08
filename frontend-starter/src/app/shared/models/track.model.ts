@@ -6,4 +6,11 @@ export interface Track {
   mimeType: string;
   size: number;
   createdAt: string;
+  bpm: number | null;
+  key: string;
+  tuning: string;
+  genre: string;
+  level: '' | 'debutant' | 'intermediaire' | 'avance';
 }
+
+export type TrackMetadata = Pick<Track, 'bpm' | 'key' | 'tuning' | 'genre' | 'level'>;

@@ -15,6 +15,7 @@ type Theme = 'dark' | 'light';
 export class AppComponent {
   readonly auth = inject(AuthService);
   readonly logoutError = signal('');
+  readonly profileMenuOpen = signal(false);
   readonly theme = signal<Theme>('dark');
   private readonly router = inject(Router);
   private readonly document = inject(DOCUMENT);
@@ -30,6 +31,14 @@ export class AppComponent {
     const nextTheme: Theme = this.theme() === 'dark' ? 'light' : 'dark';
     this.theme.set(nextTheme);
     this.document.documentElement.dataset['theme'] = nextTheme;
+  }
+
+  toggleProfileMenu(): void {
+    this.profileMenuOpen.update((open) => !open);
+  }
+
+  closeProfileMenu(): void {
+    this.profileMenuOpen.set(false);
   }
 
   animatePage(): void {

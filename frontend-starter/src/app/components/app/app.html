@@ -10,11 +10,25 @@
     <nav class="main-nav" aria-label="Navigation principale">
       @if (auth.isAuthenticated()) {
         <a routerLink="/tracks" routerLinkActive="is-active">Bibliothèque</a>
-        <a routerLink="/profile" routerLinkActive="is-active">Profil</a>
         @if (auth.currentUser(); as user) {
-          <span class="user-badge">{{ user.name || user.email }}</span>
+          <div class="profile-menu">
+            <button class="avatar-trigger" type="button" (click)="toggleProfileMenu()"
+              [attr.aria-expanded]="profileMenuOpen()" aria-haspopup="menu"
+              [attr.aria-label]="'Menu du profil de ' + user.name">
+              @if (auth.avatarUrl(); as avatar) {
+                <img [src]="avatar" alt="" />
+              } @else {
+                <span aria-hidden="true">♪</span>
+              }
+            </button>
+            @if (profileMenuOpen()) {
+              <div class="profile-dropdown" role="menu">
+                <a routerLink="/profile" role="menuitem" (click)="closeProfileMenu()">Mon profil</a>
+                <button type="button" role="menuitem" (click)="closeProfileMenu(); logout()">Déconnexion</button>
+              </div>
+            }
+          </div>
         }
-        <button class="button button--logout" type="button" (click)="logout()">Déconnexion</button>
       } @else {
         <a class="button button--ghost" routerLink="/login">Connexion</a>
         <a class="button button--primary" routerLink="/register">Créer un compte</a>

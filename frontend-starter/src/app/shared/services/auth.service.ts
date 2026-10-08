@@ -13,6 +13,8 @@ export class AuthService {
   readonly token = signal<string | null>(localStorage.getItem('gpc_token'));
   readonly isAuthenticated = computed(() => this.token() !== null);
   readonly sessionError = signal('');
+  readonly avatarUrl = signal<string | null>(null);
+  readonly avatarError = signal('');
 
   login(email: string, password: string) {
     return this.http
@@ -29,7 +31,10 @@ export class AuthService {
   profile() {
     return this.http
       .get<User>('/api/users/me')
-      .pipe(tap((user) => this.currentUser.set(user)));
+      .pipe(tap((user) => {
+        this.currentUser.set(user);
+        this.loadAvatar();
+      }));
   }
 
   restoreSession(): Observable<boolean> {
@@ -55,6 +60,57 @@ export class AuthService {
       .pipe(tap((user) => this.currentUser.set(user)));
   }
 
+  updateProfile(name: string, bio: string) {
+    return this.http
+      .put<User>('/api/users/me/profile', { name, bio })
+      .pipe(tap((user) => this.currentUser.set(user)));
+  }
+
+  uploadAvatar(file: File) {
+    const body = new FormData();
+    body.append('avatar', file);
+    return this.http.put<User>('/api/users/me/avatar', body).pipe(
+      tap((user) => {
+        this.currentUser.set(user);
+        this.loadAvatar();
+      }),
+    );
+  }
+
+  deleteAvatar() {
+    return this.http.delete<User>('/api/users/me/avatar').pipe(
+      tap((user) => {
+        this.currentUser.set(user);
+        this.releaseAvatar();
+      }),
+    );
+  }
+
+  loadAvatar(): void {
+    const user = this.currentUser();
+    if (!user?.hasProfileImage) {
+      this.releaseAvatar();
+      return;
+    }
+
+    const token = this.token();
+    if (!token) return;
+    this.avatarError.set('');
+    this.http.get('/api/users/me/avatar', { responseType: 'blob' }).subscribe({
+      next: (image) => {
+        if (this.token() !== token) return;
+        this.releaseAvatar();
+        this.avatarUrl.set(URL.createObjectURL(image));
+      },
+      error: (error: unknown) => {
+        if (this.token() !== token) return;
+        this.releaseAvatar();
+        this.avatarError.set('Impossible de charger votre photo de profil.');
+        console.error('[AuthService] Erreur de chargement de la photo de profil', error);
+      },
+    });
+  }
+
   logout(): Observable<void> {
     if (!this.token()) {
       this.clearLocalSession();
@@ -67,6 +123,7 @@ export class AuthService {
   }
 
   clearLocalSession(): void {
+    this.releaseAvatar();
     localStorage.removeItem('gpc_token');
     this.token.set(null);
     this.currentUser.set(null);
@@ -77,5 +134,12 @@ export class AuthService {
     localStorage.setItem('gpc_token', response.token);
     this.token.set(response.token);
     this.currentUser.set(response.user);
+    this.loadAvatar();
+  }
+
+  private releaseAvatar(): void {
+    const currentUrl = this.avatarUrl();
+    if (currentUrl) URL.revokeObjectURL(currentUrl);
+    this.avatarUrl.set(null);
   }
 }
