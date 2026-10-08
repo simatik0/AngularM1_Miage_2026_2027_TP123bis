@@ -10,7 +10,10 @@ describe('Authentification TP1 (API simulée)', () => {
   let auth: AuthService;
   let http: HttpTestingController;
   const navigateByUrl = vi.fn().mockResolvedValue(true);
-  const user = { id: 'test-user', name: 'Alice', email: 'alice@example.com', createdAt: '2026-10-07T00:00:00Z' };
+  const user = {
+    id: 'test-user', name: 'Alice', email: 'alice@example.com', bio: '',
+    hasProfileImage: false, createdAt: '2026-10-07T00:00:00Z',
+  };
 
   beforeEach(() => {
     localStorage.clear();
@@ -50,6 +53,16 @@ describe('Authentification TP1 (API simulée)', () => {
     expect(request.request.headers.get('Authorization')).toBe('Bearer synthetic-test-token');
     request.flush({ ...user, name: 'Bob' });
     expect(auth.currentUser()?.name).toBe('Bob');
+  });
+
+  it('met à jour la biographie via la route de profil', () => {
+    login();
+    auth.updateProfile('Alice', 'Je joue du blues.').subscribe();
+    const request = http.expectOne('/api/users/me/profile');
+    expect(request.request.method).toBe('PUT');
+    expect(request.request.body).toEqual({ name: 'Alice', bio: 'Je joue du blues.' });
+    request.flush({ ...user, bio: 'Je joue du blues.' });
+    expect(auth.currentUser()?.bio).toBe('Je joue du blues.');
   });
 
   it('enregistre la session après inscription', () => {

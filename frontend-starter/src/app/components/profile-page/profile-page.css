@@ -1,1 +1,11 @@
 :host { display: block; max-width: 700px; margin: 0 auto; }
+.profile-summary { display: flex; align-items: center; gap: 1rem; margin: 1.5rem 0; padding: 1rem; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 1rem; }
+.profile-summary > div:last-child { display: grid; gap: 0.2rem; }
+.profile-summary span, .profile-summary small, .avatar-editor small { color: var(--muted); }
+.profile-avatar { display: grid; flex: 0 0 4.5rem; width: 4.5rem; height: 4.5rem; overflow: hidden; place-items: center; color: var(--pink); font-size: 1.8rem; background: var(--surface); border: 2px solid var(--pink); border-radius: 50%; }
+.profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-editor { display: grid; gap: 0.6rem; margin-bottom: 1.5rem; }
+.avatar-editor label { font-weight: 700; }
+.avatar-editor small { font-size: 0.75rem; }
+.avatar-editor .button--refresh { justify-self: start; }
+.profile-card textarea { width: 100%; resize: vertical; color: var(--text); background: var(--field); border: 1px solid var(--line); border-radius: 0.7rem; font: inherit; }

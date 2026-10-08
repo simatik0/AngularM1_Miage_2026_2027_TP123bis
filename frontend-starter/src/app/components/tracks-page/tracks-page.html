@@ -30,6 +30,25 @@
         <input id="track-title" [formControl]="title" aria-describedby="title-help" />
         <small id="title-help">Laissez vide pour utiliser le nom du fichier.</small>
 
+        <fieldset class="track-metadata-fields">
+          <legend>Informations musicales (facultatif)</legend>
+          <label for="upload-bpm">Tempo <span>BPM</span></label>
+          <input id="upload-bpm" type="number" min="20" max="300" step="1" formControlName="bpm" placeholder="Ex. 120" />
+          <label for="upload-key">Tonalité</label>
+          <input id="upload-key" formControlName="key" maxlength="24" placeholder="Ex. La mineur" />
+          <label for="upload-tuning">Accordage</label>
+          <input id="upload-tuning" formControlName="tuning" maxlength="32" placeholder="Ex. E standard" />
+          <label for="upload-genre">Genre</label>
+          <input id="upload-genre" formControlName="genre" maxlength="40" placeholder="Ex. Blues" />
+          <label for="upload-level">Niveau</label>
+          <select id="upload-level" formControlName="level">
+            <option value="">Non défini</option>
+            <option value="debutant">Débutant</option>
+            <option value="intermediaire">Intermédiaire</option>
+            <option value="avance">Avancé</option>
+          </select>
+        </fieldset>
+
         <label class="file-label" for="audio-file">Votre fichier audio</label>
         <div class="file-drop">
           <span class="file-drop__icon" aria-hidden="true">♫</span>
@@ -88,6 +107,93 @@
           <span aria-hidden="true">{{ favoritesOnly() ? '♥' : '♡' }}</span> Favoris
         </button>
       </div>
+      <div class="filter-tools" aria-label="Filtres de la bibliothèque">
+        <label>Format
+          <select [value]="formatFilter()" (change)="setFormatFilter($event)">
+            <option value="">Tous</option><option>MP3</option><option>WAV</option><option>OGG</option><option>M4A</option>
+          </select>
+        </label>
+        <label>Date d’ajout
+          <select [value]="dateFilter()" (change)="setDateFilter($event)">
+            <option value="">Toutes les dates</option><option value="7">7 derniers jours</option>
+            <option value="30">30 derniers jours</option><option value="365">12 derniers mois</option>
+          </select>
+        </label>
+        <label>Trier par
+          <select [value]="sortOrder()" (change)="setSortOrder($event)">
+            <option value="newest">Plus récentes</option><option value="oldest">Plus anciennes</option>
+            <option value="title">Titre</option><option value="bpm">Tempo</option>
+          </select>
+        </label>
+      </div>
+      <details class="advanced-filters">
+        <summary>Filtres musicaux : BPM, tonalité, accordage, genre et niveau</summary>
+        <div class="advanced-filter-grid">
+          <label>BPM minimum
+            <input type="number" min="20" max="300" [value]="bpmMinFilter()" (input)="setBpmMinFilter($event)" />
+          </label>
+          <label>BPM maximum
+            <input type="number" min="20" max="300" [value]="bpmMaxFilter()" (input)="setBpmMaxFilter($event)" />
+          </label>
+          <label>Tonalité
+            <input type="search" placeholder="Ex. La mineur" [value]="keyFilter()" (input)="setKeyFilter($event)" />
+          </label>
+          <label>Accordage
+            <input type="search" placeholder="Ex. Drop D" [value]="tuningFilter()" (input)="setTuningFilter($event)" />
+          </label>
+          <label>Genre
+            <input type="search" placeholder="Ex. Blues" [value]="genreFilter()" (input)="setGenreFilter($event)" />
+          </label>
+          <label>Niveau
+            <select [value]="levelFilter()" (change)="setLevelFilter($event)">
+              <option value="">Tous les niveaux</option><option value="debutant">Débutant</option>
+              <option value="intermediaire">Intermédiaire</option><option value="avance">Avancé</option>
+            </select>
+          </label>
+        </div>
+      </details>
+      <section class="playlist-panel" aria-labelledby="playlist-title">
+        <div>
+          <p class="eyebrow">VOS SÉLECTIONS</p>
+          <h3 id="playlist-title">Playlists</h3>
+        </div>
+        <form class="playlist-create" (submit)="$event.preventDefault(); createPlaylist()">
+          <label class="visually-hidden" for="playlist-name">Nom de la playlist</label>
+          <input id="playlist-name" maxlength="60" placeholder="Nouvelle playlist…" [value]="playlistName()"
+            (input)="setPlaylistName($event)" />
+          <button type="submit">Créer</button>
+        </form>
+        <div class="playlist-manage">
+          <label for="playlist-select">Playlist sélectionnée</label>
+          <select id="playlist-select" [value]="selectedPlaylistId()"
+            (change)="setSelectedPlaylist($event)">
+            <option value="">Choisir une playlist…</option>
+            @for (playlist of playlists(); track playlist.id) {
+              <option [value]="playlist.id">{{ playlist.name }} ({{ playlist.trackIds.length }})</option>
+            }
+          </select>
+          @if (selectedPlaylist()) {
+            <button type="button" class="delete-track-button" (click)="deletePlaylist()">Supprimer la playlist</button>
+          }
+        </div>
+        @if (selectedPlaylist(); as playlist) {
+          <div class="playlist-members">
+            <span>Contenu de « {{ playlist.name }} » :</span>
+            @for (trackId of playlist.trackIds; track trackId) {
+              @if (tracks().find(track => track.id === trackId); as member) {
+                <span class="playlist-member">
+                  <button type="button" (click)="play(member)">{{ member.title }}</button>
+                  <button type="button" (click)="removeFromPlaylist(trackId)" [attr.aria-label]="'Retirer ' + member.title + ' de la playlist'">×</button>
+                </span>
+              }
+            } @empty {
+              <small>Cette playlist est encore vide.</small>
+            }
+          </div>
+        }
+        @if (playlistMessage()) { <p class="success" role="status">{{ playlistMessage() }}</p> }
+        @if (playlistError()) { <p class="error" role="alert">{{ playlistError() }}</p> }
+      </section>
       <div [attr.aria-busy]="loading()">
         @if (loading()) {
           <p role="status">Chargement des pistes…</p>
@@ -96,10 +202,11 @@
         } @else {
           <div class="track-grid">
             @for (track of visibleTracks(); track track.id) {
-              <article class="track-card" [attr.aria-labelledby]="'track-' + track.id">
+              <article class="track-card" [attr.aria-labelledby]="'track-' + track.id"
+                (contextmenu)="$event.preventDefault(); enqueue(track)">
                 <div class="track-card__topline">
                   <span class="track-art" aria-hidden="true">♫</span>
-                  <span class="track-format">{{ track.mimeType.replace('audio/', '').toUpperCase() }}</span>
+                  <span class="track-format">{{ formatLabel(track.mimeType) }}</span>
                   <button class="icon-button favorite-button" type="button" (click)="toggleFavorite(track.id)"
                     [attr.aria-pressed]="favorites().includes(track.id)"
                     [attr.aria-label]="favorites().includes(track.id) ? 'Retirer des favoris' : 'Ajouter aux favoris'">
@@ -108,6 +215,39 @@
                 </div>
                 <h3 [id]="'track-' + track.id">{{ track.title }}</h3>
                 <p class="filename">{{ track.originalName }}</p>
+                <div class="bpm-display" [attr.aria-label]="track.bpm === null ? 'Tempo non renseigné' : track.bpm + ' battements par minute'">
+                  @if (track.bpm !== null) {
+                    <span class="bpm-value">{{ track.bpm }} <small>BPM</small></span>
+                    <span class="bpm-meter" aria-hidden="true"><i [style.width.%]="bpmVisualPercent(track.bpm)"></i></span>
+                  } @else {
+                    <span class="bpm-missing">Tempo à renseigner</span>
+                  }
+                </div>
+                <p class="track-tags">
+                  @if (track.key) { <span>{{ track.key }}</span> }
+                  @if (track.tuning) { <span>{{ track.tuning }}</span> }
+                  @if (track.genre) { <span>{{ track.genre }}</span> }
+                  @if (track.level) { <span>{{ track.level }}</span> }
+                </p>
+                @if (metadataEditTrackId() === track.id) {
+                  <form class="metadata-editor" [formGroup]="metadataForm" (ngSubmit)="saveMetadata(track)">
+                    <label>BPM <input type="number" min="20" max="300" formControlName="bpm" /></label>
+                    <label>Tonalité <input maxlength="24" formControlName="key" /></label>
+                    <label>Accordage <input maxlength="32" formControlName="tuning" /></label>
+                    <label>Genre <input maxlength="40" formControlName="genre" /></label>
+                    <label>Niveau
+                      <select formControlName="level">
+                        <option value="">Non défini</option><option value="debutant">Débutant</option>
+                        <option value="intermediaire">Intermédiaire</option><option value="avance">Avancé</option>
+                      </select>
+                    </label>
+                    @if (metadataError()) { <p class="error" role="alert">{{ metadataError() }}</p> }
+                    <button type="submit" [disabled]="metadataSaving()">Enregistrer</button>
+                    <button type="button" class="delete-track-button" (click)="cancelMetadataEdit()">Annuler</button>
+                  </form>
+                } @else {
+                  <button type="button" class="metadata-edit-button" (click)="editMetadata(track)">Modifier les infos musicales</button>
+                }
                 <dl>
                   <div><dt>Taille</dt><dd>{{ formatSize(track.size) }}</dd></div>
                   <div><dt>Ajoutée le</dt><dd><time [attr.datetime]="track.createdAt">{{ track.createdAt | date:'dd MMM yyyy' }}</time></dd></div>
@@ -115,6 +255,11 @@
                 <button class="play-button" type="button" (click)="play(track)"
                   [disabled]="audioLoading() && currentTrack()?.id === track.id"
                   [attr.aria-label]="'Lire ' + track.title"><span aria-hidden="true">▶</span> Écouter</button>
+                <div class="track-extra-actions">
+                  <button type="button" (click)="enqueue(track)" title="Ajouter à la file d’attente">＋ File d’attente</button>
+                  <button type="button" (click)="addToPlaylist(track)" [disabled]="!selectedPlaylistId()"
+                    title="Ajouter à la playlist sélectionnée">＋ Playlist</button>
+                </div>
                 <button class="delete-track-button" type="button" (click)="delete(track)"
                   [disabled]="deletingTrackId() !== null"
                   [attr.aria-label]="'Supprimer définitivement ' + track.title">
@@ -132,6 +277,23 @@
                   <p>Aucune piste pour le moment. Importez votre première backing track pour la retrouver dans votre studio.</p>
                 }
               </div>
+              @if (queue().length) {
+                <section class="queue-panel" aria-labelledby="queue-title">
+                  <div class="queue-heading">
+                    <h3 id="queue-title">File d’attente <span>({{ queue().length }})</span></h3>
+                    <button type="button" class="button--refresh" (click)="queue.set([])">Vider</button>
+                  </div>
+                  <p>Les morceaux seront lus automatiquement à la fin de la piste en cours. Clic droit sur une carte ou bouton « File d’attente » pour ajouter.</p>
+                  <ol>
+                    @for (track of queue(); track track.id) {
+                      <li><button type="button" (click)="playQueued(track)">{{ track.title }}</button>
+                        <button type="button" class="delete-track-button" (click)="removeFromQueue(track.id)" [attr.aria-label]="'Retirer ' + track.title + ' de la file'">×</button>
+                      </li>
+                    }
+                  </ol>
+                </section>
+              }
+              @if (queueMessage()) { <p class="success" role="status">{{ queueMessage() }}</p> }
             }
           </div>
         }

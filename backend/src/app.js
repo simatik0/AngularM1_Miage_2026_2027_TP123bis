@@ -8,6 +8,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { User } from "./models/User.js";
 import { Track } from "./models/Track.js";
+import { Playlist } from "./models/Playlist.js";
 import { RevokedToken } from "./models/RevokedToken.js";
 
 // Les fichiers audio restent sur le disque du serveur dans ce TP.
@@ -140,6 +141,17 @@ const upload = multer({
     const error = new Error("Format audio non accepté");
     console.error(`[multer] Type refusé : ${file.mimetype}`, error);
     return callback(error);
+  },
+});
+
+const uploadAvatar = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+  fileFilter: (_request, file, callback) => {
+    if (["image/jpeg", "image/png", "image/webp"].includes(file.mimetype)) {
+      return callback(null, true);
+    }
+    callback(new Error("Format d’image non accepté"));
   },
 });
 
@@ -308,6 +320,76 @@ export function createApp() {
     }
   });
 
+  app.put("/api/users/me/profile", auth, async (req, res, next) => {
+    try {
+      const { name, bio } = req.body || {};
+      if (
+        typeof name !== "string" || name.trim().length < 2 ||
+        typeof bio !== "string" || bio.trim().length > 500
+      ) {
+        return res.status(400).json({ message: "Nom ou biographie invalide" });
+      }
+
+      const user = await User.findByIdAndUpdate(
+        req.auth.sub,
+        { $set: { name: name.trim(), bio: bio.trim() } },
+        { new: true, runValidators: true },
+      );
+      if (!user) return res.status(404).json({ message: "Utilisateur inconnu" });
+      console.log(`[user] Profil mis à jour : ${user.id}`);
+      return res.json(user.toPublic());
+    } catch (error) {
+      console.error("[user] Erreur de mise à jour du profil", error);
+      return next(error);
+    }
+  });
+
+  app.put("/api/users/me/avatar", auth, uploadAvatar.single("avatar"), async (req, res, next) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "Fichier image requis" });
+      const user = await User.findById(req.auth.sub);
+      if (!user) return res.status(404).json({ message: "Utilisateur inconnu" });
+      user.profileImage = req.file.buffer;
+      user.profileImageMimeType = req.file.mimetype;
+      user.hasProfileImage = true;
+      await user.save();
+      console.log(`[user] Photo de profil mise à jour : ${user.id}`);
+      return res.json(user.toPublic());
+    } catch (error) {
+      console.error("[user] Erreur de mise à jour de la photo de profil", error);
+      return next(error);
+    }
+  });
+
+  app.get("/api/users/me/avatar", auth, async (req, res, next) => {
+    try {
+      const user = await User.findById(req.auth.sub).select("+profileImage +profileImageMimeType");
+      if (!user?.profileImage || !user.profileImageMimeType) {
+        return res.status(404).json({ message: "Aucune photo de profil" });
+      }
+      res.type(user.profileImageMimeType).set("Cache-Control", "private, max-age=3600");
+      return res.send(user.profileImage);
+    } catch (error) {
+      console.error("[user] Erreur de lecture de la photo de profil", error);
+      return next(error);
+    }
+  });
+
+  app.delete("/api/users/me/avatar", auth, async (req, res, next) => {
+    try {
+      const user = await User.findById(req.auth.sub).select("+profileImage +profileImageMimeType");
+      if (!user) return res.status(404).json({ message: "Utilisateur inconnu" });
+      user.profileImage = undefined;
+      user.profileImageMimeType = undefined;
+      user.hasProfileImage = false;
+      await user.save();
+      return res.json(user.toPublic());
+    } catch (error) {
+      console.error("[user] Erreur de suppression de la photo de profil", error);
+      return next(error);
+    }
+  });
+
   /** Retourne une page des pistes appartenant exclusivement à l'utilisateur. */
   app.get("/api/tracks", auth, async (req, res, next) => {
     try {
@@ -341,6 +423,11 @@ export function createApp() {
       const publicItems = items.map((track) => ({
         ...track,
         id: String(track._id),
+        bpm: track.bpm ?? null,
+        key: track.key || "",
+        tuning: track.tuning || "",
+        genre: track.genre || "",
+        level: track.level || "",
         _id: undefined,
       }));
 
@@ -390,6 +477,11 @@ export function createApp() {
           storedName: req.file.filename,
           mimeType: req.file.mimetype,
           size: req.file.size,
+          bpm: req.body.bpm ? Number(req.body.bpm) : null,
+          key: req.body.key || "",
+          tuning: req.body.tuning || "",
+          genre: req.body.genre || "",
+          level: req.body.level || "",
         });
 
         console.log(`[tracks] Upload enregistré : ${track.id}`);
@@ -415,6 +507,90 @@ export function createApp() {
       }
     },
   );
+
+  app.put("/api/tracks/:id", auth, async (req, res, next) => {
+    try {
+      const allowedFields = ["bpm", "key", "tuning", "genre", "level"];
+      const updates = {};
+      for (const field of allowedFields) {
+        if (Object.hasOwn(req.body || {}, field)) {
+          updates[field] = field === "bpm" && req.body[field] !== null && req.body[field] !== ""
+            ? Number(req.body[field])
+            : req.body[field];
+        }
+      }
+      const track = await Track.findOneAndUpdate(
+        { _id: req.params.id, ownerId: req.auth.sub },
+        { $set: updates },
+        { new: true, runValidators: true },
+      );
+      if (!track) return res.status(404).json({ message: "Piste inconnue" });
+      return res.json(track.toPublic());
+    } catch (error) {
+      console.error(`[tracks] Erreur de mise à jour des métadonnées ${req.params.id}`, error);
+      return next(error);
+    }
+  });
+
+  app.get("/api/playlists", auth, async (req, res, next) => {
+    try {
+      const playlists = await Playlist.find({ ownerId: req.auth.sub }).sort({ createdAt: -1 });
+      return res.json(playlists.map((playlist) => playlist.toPublic()));
+    } catch (error) {
+      console.error("[playlists] Erreur de lecture", error);
+      return next(error);
+    }
+  });
+
+  app.post("/api/playlists", auth, async (req, res, next) => {
+    try {
+      const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+      if (!name || name.length > 60) {
+        return res.status(400).json({ message: "Le nom de la playlist doit contenir de 1 à 60 caractères" });
+      }
+      const playlist = await Playlist.create({ ownerId: req.auth.sub, name });
+      return res.status(201).json(playlist.toPublic());
+    } catch (error) {
+      console.error("[playlists] Erreur de création", error);
+      return next(error);
+    }
+  });
+
+  app.put("/api/playlists/:id/tracks", auth, async (req, res, next) => {
+    try {
+      const { trackId, action } = req.body || {};
+      if (typeof trackId !== "string" || !["add", "remove"].includes(action)) {
+        return res.status(400).json({ message: "Piste ou action invalide" });
+      }
+      if (action === "add" && !(await Track.exists({ _id: trackId, ownerId: req.auth.sub }))) {
+        return res.status(404).json({ message: "Piste inconnue" });
+      }
+      const update = action === "add"
+        ? { $addToSet: { trackIds: trackId } }
+        : { $pull: { trackIds: trackId } };
+      const playlist = await Playlist.findOneAndUpdate(
+        { _id: req.params.id, ownerId: req.auth.sub },
+        update,
+        { new: true, runValidators: true },
+      );
+      if (!playlist) return res.status(404).json({ message: "Playlist inconnue" });
+      return res.json(playlist.toPublic());
+    } catch (error) {
+      console.error(`[playlists] Erreur de modification ${req.params.id}`, error);
+      return next(error);
+    }
+  });
+
+  app.delete("/api/playlists/:id", auth, async (req, res, next) => {
+    try {
+      const result = await Playlist.deleteOne({ _id: req.params.id, ownerId: req.auth.sub });
+      if (!result.deletedCount) return res.status(404).json({ message: "Playlist inconnue" });
+      return res.status(204).end();
+    } catch (error) {
+      console.error(`[playlists] Erreur de suppression ${req.params.id}`, error);
+      return next(error);
+    }
+  });
 
   /** Envoie le contenu binaire d'une piste après vérification de sa propriété. */
   app.get("/api/tracks/:id/audio", auth, async (req, res, next) => {
@@ -529,6 +705,7 @@ export function createApp() {
     if (
       error instanceof multer.MulterError ||
       error?.message === "Format audio non accepté"
+      || error?.message === "Format d’image non accepté"
     ) {
       return res.status(400).json({ message: error.message });
     }
