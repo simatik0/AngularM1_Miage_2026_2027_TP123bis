@@ -446,10 +446,10 @@ export function createApp() {
     }
   });
 
-  /** Supprime la métadonnée et le fichier physique correspondant. */
+  /** Supprime le fichier physique et sa métadonnée sans laisser de piste active si la base échoue. */
   app.delete("/api/tracks/:id", auth, async (req, res, next) => {
     try {
-      const track = await Track.findOneAndDelete({
+      const track = await Track.findOne({
         _id: req.params.id,
         ownerId: req.auth.sub,
       }).select("+storedName");
@@ -459,19 +459,62 @@ export function createApp() {
         return res.status(404).json({ message: "Piste inconnue" });
       }
 
-      const audioPath = path.join(UPLOADS, track.storedName);
-      try {
-        await fsPromises.unlink(audioPath);
-        console.log(`[tracks] Fichier supprimé : ${audioPath}`);
-      } catch (error) {
-        // L'exception n'est volontairement pas ignorée : l'administrateur doit
-        // voir ce fichier orphelin si sa suppression échoue.
-        console.error(`[tracks] Fichier audio non supprimé : ${audioPath}`, error);
-        return res.status(500).json({
-          message: "Métadonnée supprimée, mais fichier audio non supprimé",
-        });
+      if (path.basename(track.storedName) !== track.storedName) {
+        console.error(`[tracks] Nom de fichier stocké invalide pour ${track.id}`);
+        return res.status(500).json({ message: "Impossible de supprimer ce fichier audio" });
       }
 
+      const audioPath = path.join(UPLOADS, track.storedName);
+      const pendingPath = path.join(UPLOADS, `.deleting-${crypto.randomUUID()}`);
+      let fileMoved = false;
+
+      try {
+        await fsPromises.rename(audioPath, pendingPath);
+        fileMoved = true;
+      } catch (error) {
+        if (error?.code !== "ENOENT") {
+          console.error(`[tracks] Impossible de préparer la suppression du fichier ${track.id}`, error);
+          return next(error);
+        }
+        console.warn(`[tracks] Fichier physique déjà absent pour ${track.id}`);
+      }
+
+      let deletion;
+      try {
+        deletion = await Track.deleteOne({
+          _id: track._id,
+          ownerId: req.auth.sub,
+        });
+      } catch (error) {
+        if (fileMoved) {
+          try {
+            await fsPromises.rename(pendingPath, audioPath);
+          } catch (restoreError) {
+            console.error(`[tracks] Échec de restauration du fichier ${track.id}`, restoreError);
+          }
+        }
+        throw error;
+      }
+
+      if (deletion.deletedCount === 0) {
+        if (fileMoved) {
+          await fsPromises.rename(pendingPath, audioPath);
+        }
+        return res.status(404).json({ message: "Piste inconnue" });
+      }
+
+      if (fileMoved) {
+        try {
+          await fsPromises.unlink(pendingPath);
+        } catch (error) {
+          console.error(`[tracks] Métadonnée supprimée mais fichier temporaire conservé pour ${track.id}`, error);
+          return res.status(500).json({
+            message: "La piste est retirée de la base, mais le fichier audio n’a pas pu être effacé du disque",
+          });
+        }
+      }
+
+      console.log(`[tracks] Piste et fichier audio supprimés : ${track.id}`);
       res.status(204).end();
     } catch (error) {
       console.error("[tracks] Erreur de suppression", error);

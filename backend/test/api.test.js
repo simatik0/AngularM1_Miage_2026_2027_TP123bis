@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
+import fsPromises from "node:fs/promises";
+import path from "node:path";
 import { createApp } from "../src/app.js";
 import { User } from "../src/models/User.js";
 import { Track } from "../src/models/Track.js";
@@ -85,5 +87,87 @@ test("logout révoque le JWT et interdit sa réutilisation", async () => {
   } finally {
     RevokedToken.exists = originalExists;
     RevokedToken.updateOne = originalUpdateOne;
+  }
+});
+
+test("suppression authentifiée efface la piste MongoDB et le fichier audio", async () => {
+  const originalFindOne = Track.findOne;
+  const originalDeleteOne = Track.deleteOne;
+  const originalExists = RevokedToken.exists;
+  const ownerId = new mongoose.Types.ObjectId();
+  const trackId = new mongoose.Types.ObjectId();
+  const storedName = `${crypto.randomUUID()}.mp3`;
+  const audioPath = path.resolve("data/uploads", storedName);
+  const track = { _id: trackId, id: String(trackId), storedName };
+  const filter = { _id: trackId, ownerId: String(ownerId) };
+  const secret = process.env.JWT_SECRET || "tp1-development-secret";
+  const value = jwt.sign({ sub: String(ownerId) }, secret, { expiresIn: "2h" });
+
+  Track.findOne = (query) => {
+    assert.deepEqual(query, { _id: String(trackId), ownerId: String(ownerId) });
+    return { select: async (fields) => {
+      assert.equal(fields, "+storedName");
+      return track;
+    } };
+  };
+  Track.deleteOne = async (query) => {
+    assert.deepEqual(query, filter);
+    return { deletedCount: 1 };
+  };
+  RevokedToken.exists = async () => null;
+
+  try {
+    await fsPromises.mkdir(path.dirname(audioPath), { recursive: true });
+    await fsPromises.writeFile(audioPath, "audio test");
+    const response = await fetch(`${base}/api/tracks/${trackId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${value}` },
+    });
+    assert.equal(response.status, 204);
+    assert.equal(await fsPromises.stat(audioPath).then(() => true, () => false), false);
+  } finally {
+    Track.findOne = originalFindOne;
+    Track.deleteOne = originalDeleteOne;
+    RevokedToken.exists = originalExists;
+    await fsPromises.unlink(audioPath).catch((error) => {
+      if (error.code !== "ENOENT") throw error;
+    });
+  }
+});
+
+test("restaure le fichier audio si la suppression MongoDB échoue", async () => {
+  const originalFindOne = Track.findOne;
+  const originalDeleteOne = Track.deleteOne;
+  const originalExists = RevokedToken.exists;
+  const ownerId = new mongoose.Types.ObjectId();
+  const trackId = new mongoose.Types.ObjectId();
+  const storedName = `${crypto.randomUUID()}.mp3`;
+  const audioPath = path.resolve("data/uploads", storedName);
+  const track = { _id: trackId, id: String(trackId), storedName };
+  const secret = process.env.JWT_SECRET || "tp1-development-secret";
+  const value = jwt.sign({ sub: String(ownerId) }, secret, { expiresIn: "2h" });
+
+  Track.findOne = () => ({ select: async () => track });
+  Track.deleteOne = async () => {
+    throw new Error("Simulated database failure");
+  };
+  RevokedToken.exists = async () => null;
+
+  try {
+    await fsPromises.mkdir(path.dirname(audioPath), { recursive: true });
+    await fsPromises.writeFile(audioPath, "audio test");
+    const response = await fetch(`${base}/api/tracks/${trackId}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${value}` },
+    });
+    assert.equal(response.status, 500);
+    assert.equal(await fsPromises.readFile(audioPath, "utf8"), "audio test");
+  } finally {
+    Track.findOne = originalFindOne;
+    Track.deleteOne = originalDeleteOne;
+    RevokedToken.exists = originalExists;
+    await fsPromises.unlink(audioPath).catch((error) => {
+      if (error.code !== "ENOENT") throw error;
+    });
   }
 });

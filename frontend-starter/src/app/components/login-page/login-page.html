@@ -1,7 +1,10 @@
-<section class="card">
-  <h1>Connexion</h1>
+<section class="card auth-card">
+  <span class="auth-mark" aria-hidden="true">♪</span>
+  <p class="eyebrow">VOTRE STUDIO VOUS ATTEND</p>
+  <h1>Ravi de vous<br />revoir<span class="heading-period">.</span></h1>
+  <p class="auth-intro">Connectez-vous pour retrouver vos morceaux et reprendre là où vous en étiez.</p>
   <form [formGroup]="form" (ngSubmit)="submit()">
-    <label>Email<input type="email" formControlName="email" /></label>
+    <label>Email<input type="email" formControlName="email" autocomplete="email" placeholder="vous@exemple.fr" /></label>
     @if (form.controls.email.touched && form.controls.email.invalid) {
       <p class="error">
         @if (form.controls.email.hasError('required')) {
@@ -11,14 +14,14 @@
         }
       </p>
     }
-    <label>Mot de passe<input type="password" formControlName="password" /></label>
+    <label>Mot de passe<input type="password" formControlName="password" autocomplete="current-password" placeholder="Votre mot de passe" /></label>
     @if (form.controls.password.touched && form.controls.password.hasError('required')) {
       <p class="error">Le mot de passe est obligatoire.</p>
     }
-    <button type="submit">Se connecter</button>
+    <button class="button--wide" type="submit">Entrer dans mon studio <span aria-hidden="true">→</span></button>
   </form>
   @if (error()) {
     <p class="error">{{ error() }}</p>
   }
-  <p><a routerLink="/register">Créer un compte</a></p>
+  <p class="auth-switch">Pas encore de compte ? <a routerLink="/register">Créer mon espace</a></p>
 </section>
