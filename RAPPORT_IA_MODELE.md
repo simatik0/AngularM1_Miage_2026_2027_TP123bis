@@ -234,6 +234,17 @@ les routes backend. Le backend, le contrat et le service HTTP existant ont
   mémoire, buffering et streaming.
 - [Preuves et compte rendu](./preuves/tp2/verification.md) : parcours réels
   dans le navigateur, capture Network, bibliothèque, lecture et erreurs.
+- [Capture Network de la lecture audio authentifiée](./preuves/tp2/lecture-network-authentifiee.png) :
+  `GET /api/tracks/:id/audio`, statut `200 OK`, réponse `audio/mpeg`.
+
+### Capture Network de la lecture audio — 8 octobre 2026
+
+Capture fournie par l’étudiant depuis l’application sur `localhost:4200`.
+Elle montre la requête `GET` vers `/api/tracks/:id/audio`, le statut `200 OK`
+et le type de réponse `audio/mpeg`. L’en-tête `Authorization` est présent ;
+la valeur du jeton n’est pas visible dans la capture.
+
+![Network : lecture audio authentifiée, statut 200 et réponse audio/mpeg](./preuves/tp2/lecture-network-authentifiee.png)
 
 L’assistant a installé les dépendances déjà déclarées et lancé les applications
 pour les essais. Il n’a ajouté aucune dépendance au projet. Les options
