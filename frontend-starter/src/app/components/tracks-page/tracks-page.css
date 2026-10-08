@@ -35,6 +35,8 @@
 .file-drop__hint { color: var(--muted); font-size: 0.66rem; }
 .button--wide { justify-content: space-between; width: 100%; margin-top: 0.65rem; padding-inline: 1rem; font-size: 0.8rem; }
 .button--wide span { font-size: 1.1rem; }
+.upload-progress { height: 0.45rem; overflow: hidden; background: var(--line); border-radius: 999px; }
+.upload-progress span { display: block; height: 100%; background: var(--pink); border-radius: inherit; transition: width 120ms linear; }
 .secure-note { display: flex; align-items: center; gap: 0.5rem; margin: 1rem 0 0; color: var(--muted); font-size: 0.68rem; }
 .secure-note span { color: var(--pink); }
 .library-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.45rem; }

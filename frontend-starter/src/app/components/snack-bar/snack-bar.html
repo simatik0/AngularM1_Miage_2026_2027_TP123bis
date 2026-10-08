@@ -1,0 +1,6 @@
+<div class="snack-bar" [class.snack-bar--error]="type() === 'error'"
+  [attr.role]="type() === 'error' ? 'alert' : 'status'"
+  [attr.aria-live]="type() === 'error' ? 'assertive' : 'polite'">
+  <p>{{ message() }}</p>
+  <button type="button" aria-label="Fermer la notification" (click)="closed.emit()">×</button>
+</div>

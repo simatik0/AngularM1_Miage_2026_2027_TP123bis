@@ -48,6 +48,7 @@ Ouvrir `http://localhost:4200`. Le compte de démonstration est
 - [SUJET_ETUDIANT_TP1.md](SUJET_ETUDIANT_TP1.md), [SUJET_ETUDIANT_TP2.md](SUJET_ETUDIANT_TP2.md) et [SUJET_ETUDIANT_TP3.md](SUJET_ETUDIANT_TP3.md) : missions des trois séances ;
 - [API_CONTRACT.md](API_CONTRACT.md) : endpoints, authentification et formats échangés ;
 - [RAPPORT_IA_MODELE.md](RAPPORT_IA_MODELE.md) : modèle de compte rendu.
+- [preuves/tp3/verification.md](preuves/tp3/verification.md) : résultats et étapes de vérification du TD3.
 - [TD2_EXPLICATIONS.md](TD2_EXPLICATIONS.md) : réalisation du TD2, explications du code et réponses sur l’audio ; [vérifications et captures](preuves/tp2/verification.md).
 - [CONSEILS_POUR_UTIISER_ASSISTANT_AI.md](CONSEILS_POUR_UTIISER_ASSISTANT_AI.md) : utiliser correctement un assistant IA, quel que soit l’outil choisi.
 
