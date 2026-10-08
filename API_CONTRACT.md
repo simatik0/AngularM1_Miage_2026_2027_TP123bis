@@ -15,11 +15,11 @@ Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utili
 | GET | `/tracks?page=1&limit=5` | JWT | `Page<Track>` |
 | POST | `/tracks` | multipart : `audio`, `title` | `201 Track` |
 | GET | `/tracks/:id/audio` | JWT | flux audio |
-| DELETE | `/tracks/:id` | JWT | `204` (bonus) |
+| DELETE | `/tracks/:id` | JWT, piste appartenant à l'utilisateur | `204` ; supprime les métadonnées MongoDB et le fichier audio du disque |
 
 `Page<Track>` contient `items`, `page`, `limit`, `total` et `pages`. Formats acceptés : MP3, WAV, OGG et M4A, 25 Mo maximum.
 
-Erreurs courantes : `400` validation, `401` authentification, `404` ressource, `409` email déjà utilisé.
+Erreurs courantes : `400` validation, `401` authentification, `404` ressource ou piste absente/non autorisée, `409` email déjà utilisé. La suppression renvoie `500` si le serveur ne peut pas garantir l'effacement du fichier audio.
 
 `POST /auth/logout` exige un JWT valide, sans corps de requête. Le serveur
 enregistre son empreinte jusqu'à son expiration afin de refuser son utilisation

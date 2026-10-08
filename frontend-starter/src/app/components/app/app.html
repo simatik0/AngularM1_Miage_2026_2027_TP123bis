@@ -1,21 +1,32 @@
 <header class="site-header">
-  <div class="brand">
-    <b>Guitar Practice Cloud</b>
-    <small>Le cloud qui manque à votre ampli</small>
-  </div>
-  <nav class="main-nav" aria-label="Navigation principale">
-    @if (auth.isAuthenticated()) {
-      <a routerLink="/tracks">Backing tracks</a>
-      <a routerLink="/profile">Profil</a>
-      @if (auth.currentUser(); as user) {
-        <span class="user-badge">{{ user.name || user.email }}</span>
+  <a class="brand" routerLink="/" aria-label="Guitar Practice Cloud, accueil">
+    <span class="brand-mark" aria-hidden="true">♪</span>
+    <span class="brand-copy">
+      <b>Guitar Practice</b>
+      <small>YOUR SOUND. YOUR SPACE.</small>
+    </span>
+  </a>
+  <div class="header-actions">
+    <nav class="main-nav" aria-label="Navigation principale">
+      @if (auth.isAuthenticated()) {
+        <a routerLink="/tracks" routerLinkActive="is-active">Bibliothèque</a>
+        <a routerLink="/profile" routerLinkActive="is-active">Profil</a>
+        @if (auth.currentUser(); as user) {
+          <span class="user-badge">{{ user.name || user.email }}</span>
+        }
+        <button class="button button--logout" type="button" (click)="logout()">Déconnexion</button>
+      } @else {
+        <a class="button button--ghost" routerLink="/login">Connexion</a>
+        <a class="button button--primary" routerLink="/register">Créer un compte</a>
       }
-      <button class="button button--logout" type="button" (click)="logout()">Se déconnecter</button>
-    } @else {
-      <a class="button button--ghost" routerLink="/login">Connexion</a>
-      <a class="button button--primary" routerLink="/register">Inscription</a>
-    }
-  </nav>
+    </nav>
+    <button class="theme-toggle" type="button" (click)="toggleTheme()"
+      [attr.aria-label]="theme() === 'dark' ? 'Activer le thème clair' : 'Activer le thème sombre'"
+      [attr.aria-pressed]="theme() === 'light'">
+      <span class="theme-toggle__icon" aria-hidden="true">{{ theme() === 'dark' ? '☼' : '☾' }}</span>
+      <span class="theme-toggle__label">{{ theme() === 'dark' ? 'Clair' : 'Sombre' }}</span>
+    </button>
+  </div>
 </header>
 
 @if (logoutError()) {
@@ -25,6 +36,10 @@
   <p class="error" role="alert">{{ auth.sessionError() }}</p>
 }
 
-<main>
-  <router-outlet />
+<main #pageContainer>
+  <router-outlet (activate)="animatePage()" />
 </main>
+<footer class="site-footer">
+  <span>GUITAR PRACTICE CLOUD</span>
+  <span>Façonné pour vos sessions.</span>
+</footer>

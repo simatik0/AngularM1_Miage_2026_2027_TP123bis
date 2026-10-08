@@ -89,6 +89,64 @@ describe('Bibliothèque TD2 (API simulée)', () => {
     http.expectNone(request => request.url.endsWith('/audio'));
   });
 
+  it('recherche les pistes affichées et filtre les favoris', () => {
+    list(1, 1, [track, { ...track, id: 'track-2', title: 'Jazz', originalName: 'jazz.wav' }]);
+    component.setSearchQuery({ target: { value: 'jazz' } } as unknown as Event);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Jazz');
+    expect(fixture.nativeElement.textContent).not.toContain('blues.mp3');
+
+    component.setSearchQuery({ target: { value: '' } } as unknown as Event);
+    component.toggleFavorite('track-1');
+    component.toggleFavoritesFilter();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Blues');
+    expect(fixture.nativeElement.textContent).not.toContain('Jazz');
+  });
+
+  it('demande confirmation avant de supprimer le fichier et sa piste puis actualise la page', () => {
+    list();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    component.delete(track);
+    http.expectNone(request => request.method === 'DELETE');
+
+    confirm.mockReturnValue(true);
+    component.delete(track);
+    const request = http.expectOne('/api/tracks/track-1');
+    expect(request.request.method).toBe('DELETE');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer synthetic-test-token');
+    request.flush(null);
+    list();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('ont été supprimés');
+    expect(component.deletingTrackId()).toBeNull();
+  });
+
+  it('permet de naviguer dans la piste avec la barre de progression et affiche le temps', () => {
+    list();
+    component.play(track);
+    http.expectOne('/api/tracks/track-1/audio').flush(new Blob(['audio'], { type: 'audio/mpeg' }));
+    fixture.detectChanges();
+
+    const audio = fixture.nativeElement.querySelector('audio') as HTMLAudioElement;
+    Object.defineProperty(audio, 'duration', { value: 120, configurable: true });
+    Object.defineProperty(audio, 'currentTime', { value: 0, writable: true, configurable: true });
+    audio.dispatchEvent(new Event('loadedmetadata'));
+    fixture.detectChanges();
+    const seekbar = fixture.nativeElement.querySelector('.seekbar') as HTMLInputElement;
+    seekbar.value = '45';
+    seekbar.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(audio.currentTime).toBe(45);
+    expect(component.currentTime()).toBe(45);
+    expect(component.duration()).toBe(120);
+    expect(component.progressPercent()).toBe(37.5);
+    expect(component.formatTime(45)).toBe('0:45');
+    expect(component.formatTime(120)).toBe('2:00');
+  });
+
   it('affiche une erreur de liste et permet de réessayer sans changer la page affichée', () => {
     list(1, 2);
     component.go(2);
