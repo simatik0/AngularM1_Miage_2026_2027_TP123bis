@@ -1,4 +1,4 @@
-# Rapport d'usage de l'IA — TP1
+# Rapport d'usage de l'IA — TP1 et TD2
 
 ## Utilisation de l'assistant IA
 
@@ -204,3 +204,71 @@ Chaque membre du binôme doit également pouvoir expliquer le flux, les fichiers
 impliqués et les modifications avec ses propres mots. Le modèle réellement
 utilisé et la consommation de tokens sont à relever dans l'outil de l'étudiant ;
 aucun chiffre de consommation n'a été inventé dans ce rapport.
+
+## TD2 — Bibliothèque, upload et lecture audio — 7 octobre 2026
+
+### Demande et périmètre
+
+L’étudiant a demandé de réaliser les missions principales de
+[l’énoncé TD2](./SUJET_ETUDIANT_TP2.md), au plus simple, avec des explications
+sur les changements. L’assistant a lu les consignes du projet, le contrat HTTP,
+le composant de bibliothèque, le service de pistes, l’intercepteur JWT et
+les routes backend. Le backend, le contrat et le service HTTP existant ont
+été conservés.
+
+### Travail réalisé avec assistance
+
+- [Composant de bibliothèque](./frontend-starter/src/app/components/tracks-page/tracks-page.ts) :
+  états Signals, navigation bornée, erreurs visibles, validations MIME/taille/
+  présence, garde contre le double envoi, réinitialisation après succès,
+  titre de secours, chargement audio, annulation et révocation des ObjectURL.
+- [Template](./frontend-starter/src/app/components/tracks-page/tracks-page.html) et
+  [styles](./frontend-starter/src/app/components/tracks-page/tracks-page.css) :
+  formulaire Reactive Forms, messages accessibles, cards responsives,
+  informations formatées, pagination et lecteur partagé.
+- [Tests TD2](./frontend-starter/src/app/components/tracks-page/tracks-page.spec.ts) :
+  9 scénarios avec API simulée portant sur les comportements importants,
+  notamment les requêtes, les erreurs, les soumissions et le cycle de vie audio.
+- [Explications TD2](./TD2_EXPLICATIONS.md) : cartographie des méthodes,
+  flux HTTP, validations serveur et réponses aux questions sur Blob, ObjectURL,
+  mémoire, buffering et streaming.
+- [Preuves et compte rendu](./preuves/tp2/verification.md) : parcours réels
+  dans le navigateur, capture Network, bibliothèque, lecture et erreurs.
+
+L’assistant a installé les dépendances déjà déclarées et lancé les applications
+pour les essais. Il n’a ajouté aucune dépendance au projet. Les options
+Material, Mongoose, progression, suppression, filtre et couverture n’ont pas
+été implémentées ; le formatage des tailles et des dates a été retenu.
+
+### Vérification et correction pendant les essais
+
+Un premier essai réel a révélé que le formulaire, initialement associé à un
+seul FormControl, rechargeait la page au lieu d’appeler `ngSubmit` : il lui
+manquait le FormGroup. Ce point a été corrigé et le test déclenche maintenant
+l’événement de soumission du formulaire, en vérifiant l’absence de navigation
+native et l’existence d’un seul POST.
+
+Résultats finaux : compilation Angular réussie, **15 tests frontend réussis**
+(6 du TP1 et 9 du TD2), **3 tests backend existants réussis**. Les tests unitaires
+utilisent une API simulée ; les observations Network, uploads et lectures
+décrits dans les preuves utilisent le backend réel.
+
+Les parcours réels ont validé : pagination sur deux pages, upload multipart,
+retour à la première page, formulaire vidé, lecture du Blob authentifié,
+validation locale, affichage d’un vrai 400 serveur, refus d’accès avec un autre
+compte et sans JWT, ainsi que l’absence de débordement horizontal à 390 px.
+Le compte de démonstration TD2 et ses sept pistes sont recensés dans le compte
+rendu. La configuration secrète n’a pas été copiée dans les livrables.
+
+### Ce que l’étudiant doit savoir expliquer
+
+La liste charge des métadonnées, pas tous les fichiers audio. HttpClient
+reçoit le Blob complet avant de le transmettre au composant. L’ObjectURL donne
+au lecteur une adresse locale et doit être révoquée lorsqu’elle n’est plus
+utilisée. L’intercepteur JWT ne s’applique pas à une URL HTTP directement
+placée dans `src`. Enfin, les validations frontend peuvent être contournées,
+ce qui rend les contrôles serveur indispensables.
+
+Le document a été produit avec assistance et doit être relu et compris par
+l’étudiant. Aucun volume de tokens ni coût n’est inventé ; ces informations
+restent à relever dans l’interface de l’outil si l’enseignant les demande.
