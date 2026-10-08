@@ -64,5 +64,11 @@ disparu : la bibliothèque visible montre encore cinq cards. Pour clore ce point
 il faut confirmer que le `GET` a été fait après le `DELETE` et que l’identifiant
 supprimé correspond bien à la card qui a disparu du résultat.
 
-La capture Network réelle d’un upload avec progression (`POST /api/tracks`,
-statut `201`) reste à ajouter.
+### Upload avec progression — POST 201
+
+![Network : POST /api/tracks, statut 201, barre de progression d’envoi visible, en-têtes sensibles masqués](./upload-progress-network.png)
+
+Le panneau montre un `POST /api/tracks` terminé avec `201 Created` et une barre de
+progression pendant l’upload. Cette capture confirme le bon envoi du fichier
+multiform, la publication de la piste et l’évolution de la transmission avant
+la réponse serveur.
