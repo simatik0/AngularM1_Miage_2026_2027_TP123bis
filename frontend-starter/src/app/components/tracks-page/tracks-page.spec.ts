@@ -223,8 +223,18 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
 
   it('demande confirmation avant de supprimer le fichier et sa piste puis actualise la page', () => {
     list();
+    const row = fixture.nativeElement.querySelector('.track-row') as HTMLElement;
+    row.dispatchEvent(new MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true, clientX: 50, clientY: 60,
+    }));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.track-row__queue')).toBeNull();
+    const menuDelete = fixture.nativeElement.querySelector('.track-menu-delete') as HTMLButtonElement;
+    expect(menuDelete).not.toBeNull();
+    expect(menuDelete.parentElement?.lastElementChild).toBe(menuDelete);
+    expect(menuDelete.textContent).toContain('Supprimer');
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    component.delete(track);
+    menuDelete.click();
     http.expectNone(request => request.method === 'DELETE');
 
     confirm.mockReturnValue(true);
@@ -332,11 +342,20 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
 
     expect(playerFixture.nativeElement.querySelector('.waveform')).toBeNull();
     expect(playerFixture.nativeElement.querySelector('.player-tool').textContent).toContain('Forme d’onde');
+    const player = playerFixture.componentInstance;
+    player.waveform.set([35, 50, 75]);
+    playback.duration.set(120);
+    playback.currentTime.set(45);
+    (playerFixture.nativeElement.querySelector('.player-tool') as HTMLButtonElement).click();
+    playerFixture.detectChanges();
+    expect(playerFixture.nativeElement.querySelector('.waveform-playhead').style.left).toBe('37.5%');
+
     const queueMenu = playerFixture.nativeElement.querySelector('.queue-menu') as HTMLDetailsElement;
     expect(queueMenu.open).toBe(false);
     (queueMenu.querySelector('summary') as HTMLElement).click();
     playerFixture.detectChanges();
     expect(queueMenu.open).toBe(true);
+    expect((queueMenu.querySelector('summary') as HTMLElement).textContent).toContain('File d’attente (1)');
     expect(queueMenu.textContent).toContain('Jazz');
     playerFixture.destroy();
   });
@@ -372,14 +391,13 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     http.expectNone(request => request.method === 'POST');
   });
 
-  it('analyse le morceau, envoie les métadonnées puis réinitialise le formulaire et la première page', async () => {
+  it('analyse le morceau automatiquement, envoie les résultats puis réinitialise le formulaire et la première page', async () => {
     list(1, 2);
     component.go(2);
     list(2, 2);
     choose();
     component.title.setValue('  Mon blues  ');
-    component.form.controls.bpm.setValue(128);
-    component.form.controls.genre.setValue('Blues');
+    expect(fixture.nativeElement.textContent).not.toContain('Informations musicales (facultatif)');
     const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
     const submit = new Event('submit', { cancelable: true });
     form.dispatchEvent(submit);
@@ -398,9 +416,9 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(keys).toEqual(['audio', 'title', 'bpm', 'key', 'tuning', 'genre', 'level', 'waveform']);
     expect(body.get('audio')).toBeInstanceOf(File);
     expect(body.get('title')).toBe('Mon blues');
-    expect(body.get('bpm')).toBe('128');
+    expect(body.get('bpm')).toBe('110');
     expect(body.get('key')).toBe('Mi mineur');
-    expect(body.get('genre')).toBe('Blues');
+    expect(body.get('genre')).toBe('');
     expect(JSON.parse(String(body.get('waveform')))).toHaveLength(128);
     expect(request.request.headers.has('Content-Type')).toBe(false);
     expect(request.request.reportProgress).toBe(true);

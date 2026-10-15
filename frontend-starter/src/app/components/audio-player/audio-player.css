@@ -37,8 +37,11 @@
 .waveform-dialog .eyebrow { margin: 0 0 0.35rem; color: var(--pink); font-size: 0.6rem; font-weight: 800; letter-spacing: 0.12em; }
 .waveform-dialog h2 { margin: 0 2rem 1.2rem 0; font-size: 1.1rem; }
 .waveform-close { position: absolute; top: 0.7rem; right: 0.7rem; width: 2rem; min-height: 2rem; padding: 0; color: var(--muted); background: transparent; border: 0; box-shadow: none; font-size: 1.3rem; }
-.waveform { display: flex; height: 9rem; align-items: center; gap: 2px; padding: 0.8rem; overflow: hidden; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 0.7rem; }
+.waveform { position: relative; height: 9rem; padding: 0.8rem; overflow: hidden; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 0.7rem; }
+.waveform-track { position: absolute; inset: 0.8rem; }
+.waveform-bars { display: flex; height: 100%; align-items: center; gap: 2px; }
 .waveform i { flex: 1 1 0; min-height: 5%; background: linear-gradient(180deg, var(--pink), #bd3f82); border-radius: 2px; }
+.waveform-playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; box-shadow: 0 0 8px var(--pink-bright); transform: translateX(-50%); pointer-events: none; }
 
 @media (max-width: 720px) {
   .floating-player { right: 0.5rem; bottom: 0.5rem; left: 0.5rem; grid-template-columns: minmax(0, 1fr) auto; gap: 0.55rem 0.75rem; padding: 0.7rem; }

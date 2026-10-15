@@ -30,25 +30,6 @@
         <input id="track-title" [formControl]="title" aria-describedby="title-help" />
         <small id="title-help">Laissez vide pour utiliser le nom du fichier.</small>
 
-        <fieldset class="track-metadata-fields">
-          <legend>Informations musicales (facultatif)</legend>
-          <label for="upload-bpm">Tempo <span>BPM</span></label>
-          <input id="upload-bpm" type="number" min="20" max="300" step="1" formControlName="bpm" placeholder="Ex. 120" />
-          <label for="upload-key">Tonalité</label>
-          <input id="upload-key" formControlName="key" maxlength="24" placeholder="Ex. La mineur" />
-          <label for="upload-tuning">Accordage</label>
-          <input id="upload-tuning" formControlName="tuning" maxlength="32" placeholder="Ex. E standard" />
-          <label for="upload-genre">Genre</label>
-          <input id="upload-genre" formControlName="genre" maxlength="40" placeholder="Ex. Blues" />
-          <label for="upload-level">Niveau</label>
-          <select id="upload-level" formControlName="level">
-            <option value="">Non défini</option>
-            <option value="debutant">Débutant</option>
-            <option value="intermediaire">Intermédiaire</option>
-            <option value="avance">Avancé</option>
-          </select>
-        </fieldset>
-
         <label class="file-label" for="audio-file">Votre fichier audio</label>
         <div class="file-drop">
           <span class="file-drop__icon" aria-hidden="true">♫</span>
@@ -180,15 +161,8 @@
                   <button class="track-row__listen" type="button" (click)="play(track)"
                     [disabled]="audioLoading() && currentTrack()?.id === track.id"
                     [attr.aria-label]="'Lire ' + track.title">▶</button>
-                  <button class="track-row__queue" type="button" (click)="enqueue(track)"
-                    [attr.aria-label]="'Ajouter ' + track.title + ' à la file d’attente'">＋ File</button>
                   <button class="track-row__more" type="button" (click)="showTrackMenu($event, track)"
                     [attr.aria-label]="'Options pour ' + track.title">⋯</button>
-                  <button class="delete-track-button" type="button" (click)="delete(track)"
-                    [disabled]="deletingTrackId() !== null"
-                    [attr.aria-label]="'Supprimer définitivement ' + track.title">
-                    {{ deletingTrackId() === track.id ? 'Suppression…' : 'Supprimer' }}
-                  </button>
                 </div>
                 @if (track.key || track.tuning || track.genre || track.level) {
                   <p class="track-tags">
@@ -267,6 +241,10 @@
         @if (playlistError()) { <p class="error" role="alert">{{ playlistError() }}</p> }
       </div>
     </details>
+    <button type="button" role="menuitem" class="track-menu-delete"
+      [disabled]="deletingTrackId() !== null" (click)="delete(track); closeTrackMenu()">
+      {{ deletingTrackId() === track.id ? 'Suppression…' : 'Supprimer' }}
+    </button>
   </div>
 }
 
