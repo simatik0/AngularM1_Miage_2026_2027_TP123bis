@@ -17,6 +17,7 @@ describe('PlaylistsPageComponent', () => {
     id: 'track-1', title: 'Blues', originalName: 'blues.mp3',
     mimeType: 'audio/mpeg', size: 2048, createdAt: '2026-10-07T12:00:00Z',
     bpm: 120, key: '', tuning: '', genre: '', level: '',
+    waveform: [],
   };
   const createObjectURL = vi.fn();
   const revokeObjectURL = vi.fn();

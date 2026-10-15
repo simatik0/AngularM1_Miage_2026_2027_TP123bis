@@ -4,9 +4,10 @@ import { Component, computed, DestroyRef, ElementRef, HostListener, inject, sign
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { finalize, Subscription } from 'rxjs';
-import { Track, TrackMetadata } from '../../shared/models/track.model';
+import { Track, TrackAnalysis, TrackMetadata } from '../../shared/models/track.model';
 import { Playlist, TrackService } from '../../shared/services/track.service';
 import { AudioPlaybackService } from '../../shared/services/audio-playback.service';
+import { AudioAnalysisService } from '../../shared/services/audio-analysis.service';
 import { SnackBarComponent } from '../snack-bar/snack-bar';
 
 type TrackMetadataControls = {
@@ -29,9 +30,11 @@ type TrackUploadControls = TrackMetadataControls & {
 export class TracksPageComponent {
   private readonly service = inject(TrackService);
   private readonly playback = inject(AudioPlaybackService);
+  private readonly audioAnalysis = inject(AudioAnalysisService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
   private listRequest?: Subscription;
+  private destroyed = false;
 
   // Même limite et mêmes types MIME que Multer dans le backend.
   private readonly maxFileSize = 25 * 1024 * 1024;
@@ -48,6 +51,7 @@ export class TracksPageComponent {
   readonly loading = signal(false);
   readonly listError = signal('');
   readonly uploading = signal(false);
+  readonly analysisStatus = signal('');
   readonly uploadProgress = signal<number | null>(null);
   readonly uploadError = signal('');
   readonly uploadSuccess = signal('');
@@ -143,6 +147,9 @@ export class TracksPageComponent {
   readonly file = signal<File | null>(null);
 
   constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+    });
     this.load();
     this.loadPlaylists();
   }
@@ -180,7 +187,7 @@ export class TracksPageComponent {
     this.load(page);
   }
 
-  upload(): void {
+  async upload(): Promise<void> {
     if (this.uploading()) return;
 
     const file = this.file();
@@ -194,15 +201,36 @@ export class TracksPageComponent {
     }
 
     this.uploading.set(true);
-    this.uploadProgress.set(0);
+    this.analysisStatus.set('Analyse audio en cours…');
+    this.uploadProgress.set(null);
     const title = this.title.value.trim() || file.name;
-    this.title.disable();
-    this.service.upload(file, title, uploadMetadata).pipe(
+    this.form.disable();
+    let analysis: TrackAnalysis;
+    try {
+      analysis = await this.audioAnalysis.analyze(file);
+    } catch (error: unknown) {
+      console.error('[TracksPage] Erreur d’analyse du fichier audio', error);
+      if (!this.destroyed) {
+        this.uploadError.set(
+          'Impossible d’analyser ce fichier audio dans votre navigateur. Essayez un MP3, WAV, OGG ou M4A lisible.',
+        );
+        this.uploading.set(false);
+        this.analysisStatus.set('');
+        this.form.enable();
+      }
+      return;
+    }
+    if (this.destroyed) return;
+
+    this.analysisStatus.set('Analyse terminée, envoi du morceau…');
+    this.uploadProgress.set(0);
+    this.service.upload(file, title, uploadMetadata, analysis).pipe(
       takeUntilDestroyed(this.destroyRef),
       finalize(() => {
         this.uploading.set(false);
         this.uploadProgress.set(null);
-        this.title.enable();
+        this.analysisStatus.set('');
+        this.form.enable();
       }),
     ).subscribe({
       next: (event) => {

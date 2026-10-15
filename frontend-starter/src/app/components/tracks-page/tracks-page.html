@@ -68,7 +68,7 @@
           <p class="success" role="status">{{ uploadSuccess() }}</p>
         }
         @if (uploading()) {
-          <p role="status">Envoi du fichier en cours… {{ uploadProgress() === null ? '' : uploadProgress() + '%' }}</p>
+          <p role="status">{{ analysisStatus() }} {{ uploadProgress() === null ? '' : uploadProgress() + '%' }}</p>
           @if (uploadProgress() !== null) {
             <div class="upload-progress" role="progressbar" aria-label="Progression de l’envoi"
               aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="uploadProgress()"
@@ -78,7 +78,7 @@
           }
         }
         <button class="button--wide" type="submit" [disabled]="uploading() || !file()">
-          {{ uploading() ? 'Envoi en cours…' : 'Ajouter à ma bibliothèque' }} <span aria-hidden="true">→</span>
+          {{ uploading() ? 'Analyse et envoi…' : 'Analyser puis ajouter' }} <span aria-hidden="true">→</span>
         </button>
       </form>
       <p class="secure-note"><span aria-hidden="true">◈</span> Vos fichiers restent dans votre espace privé.</p>

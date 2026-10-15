@@ -155,6 +155,54 @@ const uploadAvatar = multer({
   },
 });
 
+function parseAudioAnalysis(body) {
+  const bpm = body?.bpm === "" || body?.bpm === undefined || body?.bpm === null
+    ? null
+    : Number(body.bpm);
+  const waveformProvided = body?.waveform !== undefined && body.waveform !== "";
+  let waveform = [];
+  if (waveformProvided) {
+    try {
+      waveform = JSON.parse(body.waveform);
+    } catch {
+      waveform = null;
+    }
+  }
+  const key = typeof body?.key === "string" ? body.key.trim() : "";
+  if (
+    (bpm !== null && (!Number.isFinite(bpm) || bpm < 20 || bpm > 300)) ||
+    key.length > 24 ||
+    (waveformProvided && (
+      !Array.isArray(waveform) || waveform.length !== 128 ||
+      waveform.some((point) => typeof point !== "number" || !Number.isFinite(point) || point < 0 || point > 1)
+    ))
+  ) {
+    const error = new Error("Analyse audio invalide");
+    error.status = 400;
+    throw error;
+  }
+  return { bpm, key, waveform };
+}
+
+function parseTrackMetadata(body) {
+  const tuning = typeof body?.tuning === "string" ? body.tuning.trim() : "";
+  const genre = typeof body?.genre === "string" ? body.genre.trim() : "";
+  const level = typeof body?.level === "string" ? body.level : "";
+  if (
+    (body?.tuning !== undefined && typeof body.tuning !== "string") ||
+    (body?.genre !== undefined && typeof body.genre !== "string") ||
+    (body?.level !== undefined && typeof body.level !== "string") ||
+    tuning.length > 32 ||
+    genre.length > 40 ||
+    !["", "debutant", "intermediaire", "avance"].includes(level)
+  ) {
+    const error = new Error("Métadonnées musicales invalides");
+    error.status = 400;
+    throw error;
+  }
+  return { tuning, genre, level };
+}
+
 /**
  * Construit l'application Express sans ouvrir de port.
  * Cette séparation permet au serveur réel et aux tests de créer la même
@@ -428,6 +476,7 @@ export function createApp() {
         tuning: track.tuning || "",
         genre: track.genre || "",
         level: track.level || "",
+        waveform: track.waveform || [],
         _id: undefined,
       }));
 
@@ -449,7 +498,7 @@ export function createApp() {
   });
 
   /**
-   * Reçoit le champ multipart audio et le champ texte title.
+   * Reçoit le fichier audio, son titre et l'analyse calculée par le navigateur.
    * upload.single("audio") traite un seul fichier et le place dans req.file,
    * tandis que req.body.title contient le champ texte associé.
    * C'est ici qu'est fait l'upload de fichiers sur le serveur. 
@@ -457,7 +506,7 @@ export function createApp() {
    * Le middleware upload.single("audio") traite le fichier audio envoyé dans le champ "audio" du formulaire
    * ou de l'appel depuis le frontend avec un objet FormData.
    * Le fichier est temporairement reçu sur disque, puis enregistré dans GridFS
-   * et ses métadonnées dans MongoDB.
+   * avec son analyse et ses métadonnées dans MongoDB.
    */
   app.post(
     "/api/tracks",
@@ -470,6 +519,8 @@ export function createApp() {
           return res.status(400).json({ message: "Fichier audio requis" });
         }
 
+        const analysis = parseAudioAnalysis(req.body);
+        const metadata = parseTrackMetadata(req.body);
         const audioFileId = await storeAudioFile(req.file, req.auth.sub);
         let track;
         try {
@@ -480,11 +531,8 @@ export function createApp() {
             audioFileId,
             mimeType: req.file.mimetype,
             size: req.file.size,
-            bpm: req.body.bpm ? Number(req.body.bpm) : null,
-            key: req.body.key || "",
-            tuning: req.body.tuning || "",
-            genre: req.body.genre || "",
-            level: req.body.level || "",
+            ...analysis,
+            ...metadata,
           });
         } catch (error) {
           try {
@@ -517,14 +565,49 @@ export function createApp() {
 
   app.put("/api/tracks/:id", auth, async (req, res, next) => {
     try {
-      const allowedFields = ["bpm", "key", "tuning", "genre", "level"];
       const updates = {};
-      for (const field of allowedFields) {
-        if (Object.hasOwn(req.body || {}, field)) {
-          updates[field] = field === "bpm" && req.body[field] !== null && req.body[field] !== ""
-            ? Number(req.body[field])
-            : req.body[field];
+      if (Object.hasOwn(req.body || {}, "bpm")) {
+        const bpm = req.body.bpm === null ? null : Number(req.body.bpm);
+        if (bpm !== null && (!Number.isFinite(bpm) || bpm < 20 || bpm > 300)) {
+          return res.status(400).json({ message: "Tempo estimé invalide" });
         }
+        updates.bpm = bpm;
+      }
+      if (Object.hasOwn(req.body || {}, "key")) {
+        if (typeof req.body.key !== "string" || req.body.key.length > 24) {
+          return res.status(400).json({ message: "Tonalité estimée invalide" });
+        }
+        updates.key = req.body.key;
+      }
+      if (Object.hasOwn(req.body || {}, "tuning")) {
+        if (typeof req.body.tuning !== "string" || req.body.tuning.length > 32) {
+          return res.status(400).json({ message: "Accordage invalide" });
+        }
+        updates.tuning = req.body.tuning;
+      }
+      if (Object.hasOwn(req.body || {}, "genre")) {
+        if (typeof req.body.genre !== "string" || req.body.genre.length > 40) {
+          return res.status(400).json({ message: "Genre invalide" });
+        }
+        updates.genre = req.body.genre;
+      }
+      if (Object.hasOwn(req.body || {}, "level")) {
+        if (!["", "debutant", "intermediaire", "avance"].includes(req.body.level)) {
+          return res.status(400).json({ message: "Niveau invalide" });
+        }
+        updates.level = req.body.level;
+      }
+      if (Object.hasOwn(req.body || {}, "waveform")) {
+        if (
+          !Array.isArray(req.body.waveform) || req.body.waveform.length !== 128 ||
+          req.body.waveform.some((point) => typeof point !== "number" || !Number.isFinite(point) || point < 0 || point > 1)
+        ) {
+          return res.status(400).json({ message: "Forme d’onde invalide" });
+        }
+        updates.waveform = req.body.waveform;
+      }
+      if (!Object.keys(updates).length) {
+        return res.status(400).json({ message: "Aucune métadonnée ou analyse audio fournie" });
       }
       const track = await Track.findOneAndUpdate(
         { _id: req.params.id, ownerId: req.auth.sub },
@@ -756,6 +839,9 @@ export function createApp() {
       return res.status(400).json({ message: error.message });
     }
     if (error?.name === "ValidationError") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error?.status === 400) {
       return res.status(400).json({ message: error.message });
     }
     if (error?.name === "CastError") {

@@ -7,6 +7,7 @@ import { authInterceptor } from '../../shared/interceptors/auth.interceptor';
 import { Track } from '../../shared/models/track.model';
 import { AuthService } from '../../shared/services/auth.service';
 import { AudioPlaybackService } from '../../shared/services/audio-playback.service';
+import { AudioAnalysisService } from '../../shared/services/audio-analysis.service';
 import { AudioPlayerComponent } from '../audio-player/audio-player';
 import { TracksPageComponent } from './tracks-page';
 
@@ -19,6 +20,7 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     id: 'track-1', title: 'Blues', originalName: 'blues.mp3',
     mimeType: 'audio/mpeg', size: 2048, createdAt: '2026-10-07T12:00:00Z',
     bpm: 120, key: 'La mineur', tuning: 'E standard', genre: 'Blues', level: 'debutant',
+    waveform: Array.from({ length: 128 }, (_, index) => (index % 9) / 9),
   };
   const createObjectURL = vi.fn();
   const revokeObjectURL = vi.fn();
@@ -38,6 +40,16 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
       providers: [
         provideHttpClient(withInterceptors([authInterceptor])),
         provideHttpClientTesting(),
+        {
+          provide: AudioAnalysisService,
+          useValue: {
+            analyze: vi.fn().mockResolvedValue({
+              bpm: 110,
+              key: 'Mi mineur',
+              waveform: Array.from({ length: 128 }, (_, index) => (index % 8) / 8),
+            }),
+          },
+        },
         { provide: Router, useValue: { navigateByUrl: vi.fn().mockResolvedValue(true) } },
       ],
     });
@@ -360,7 +372,7 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     http.expectNone(request => request.method === 'POST');
   });
 
-  it('envoie exactement audio et title, évite un double POST et réinitialise le formulaire puis la première page', () => {
+  it('analyse le morceau, envoie les métadonnées puis réinitialise le formulaire et la première page', async () => {
     list(1, 2);
     component.go(2);
     list(2, 2);
@@ -377,15 +389,19 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(fixture.nativeElement.querySelector('button[type="submit"]').disabled).toBe(true);
     expect(fixture.nativeElement.querySelector('#audio-file').disabled).toBe(true);
     expect(component.title.disabled).toBe(true);
+    await vi.waitFor(() => expect(component.analysisStatus()).toContain('envoi'));
+    await component.upload();
     const request = http.expectOne('/api/tracks');
     const body = request.request.body as FormData;
     const keys: string[] = [];
     body.forEach((_value, key) => keys.push(key));
-    expect(keys).toEqual(['audio', 'title', 'bpm', 'genre']);
+    expect(keys).toEqual(['audio', 'title', 'bpm', 'key', 'tuning', 'genre', 'level', 'waveform']);
     expect(body.get('audio')).toBeInstanceOf(File);
     expect(body.get('title')).toBe('Mon blues');
     expect(body.get('bpm')).toBe('128');
+    expect(body.get('key')).toBe('Mi mineur');
     expect(body.get('genre')).toBe('Blues');
+    expect(JSON.parse(String(body.get('waveform')))).toHaveLength(128);
     expect(request.request.headers.has('Content-Type')).toBe(false);
     expect(request.request.reportProgress).toBe(true);
     request.event({ type: HttpEventType.UploadProgress, loaded: 50, total: 100 });
@@ -404,11 +420,12 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(fixture.nativeElement.textContent).toContain('a bien été ajouté');
   });
 
-  it('conserve le fichier après un 400 serveur et utilise son nom quand le titre est vide', () => {
+  it('conserve le fichier après un 400 serveur et utilise son nom quand le titre est vide', async () => {
     list();
     choose();
     component.title.setValue('   ');
     component.upload();
+    await vi.waitFor(() => expect(component.analysisStatus()).toContain('envoi'));
     const request = http.expectOne('/api/tracks');
     expect(request.request.body.get('title')).toBe('blues.mp3');
     request.flush({ message: 'Format audio non accepté' }, { status: 400, statusText: 'Bad Request' });
@@ -417,6 +434,7 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(component.file()).not.toBeNull();
     expect(component.uploading()).toBe(false);
     component.upload();
+    await vi.waitFor(() => expect(component.analysisStatus()).toContain('envoi'));
     http.expectOne('/api/tracks').flush({ message: 'File too large' }, { status: 400, statusText: 'Bad Request' });
     expect(component.uploadError()).toContain('25 Mo');
   });
