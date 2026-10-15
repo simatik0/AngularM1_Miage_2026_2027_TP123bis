@@ -30,25 +30,7 @@
         <input id="track-title" [formControl]="title" aria-describedby="title-help" />
         <small id="title-help">Laissez vide pour utiliser le nom du fichier.</small>
 
-        <fieldset class="track-metadata-fields">
-          <legend>Informations musicales (facultatif)</legend>
-          <label for="upload-bpm">Tempo <span>BPM</span></label>
-          <input id="upload-bpm" type="number" min="20" max="300" step="1" formControlName="bpm" placeholder="Ex. 120" />
-          <label for="upload-key">Tonalité</label>
-          <input id="upload-key" formControlName="key" maxlength="24" placeholder="Ex. La mineur" />
-          <label for="upload-tuning">Accordage</label>
-          <input id="upload-tuning" formControlName="tuning" maxlength="32" placeholder="Ex. E standard" />
-          <label for="upload-genre">Genre</label>
-          <input id="upload-genre" formControlName="genre" maxlength="40" placeholder="Ex. Blues" />
-          <label for="upload-level">Niveau</label>
-          <select id="upload-level" formControlName="level">
-            <option value="">Non défini</option>
-            <option value="debutant">Débutant</option>
-            <option value="intermediaire">Intermédiaire</option>
-            <option value="avance">Avancé</option>
-          </select>
-        </fieldset>
-
+        <small class="analysis-note">Le tempo, la tonalité et la forme d’onde seront détectés automatiquement à l’import. Ce sont des estimations.</small>
         <label class="file-label" for="audio-file">Votre fichier audio</label>
         <div class="file-drop">
           <span class="file-drop__icon" aria-hidden="true">♫</span>
@@ -68,7 +50,7 @@
           <p class="success" role="status">{{ uploadSuccess() }}</p>
         }
         @if (uploading()) {
-          <p role="status">Envoi du fichier en cours… {{ uploadProgress() === null ? '' : uploadProgress() + '%' }}</p>
+          <p role="status">{{ analysisStatus() }} {{ uploadProgress() === null ? '' : uploadProgress() + '%' }}</p>
           @if (uploadProgress() !== null) {
             <div class="upload-progress" role="progressbar" aria-label="Progression de l’envoi"
               aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="uploadProgress()"
@@ -78,7 +60,7 @@
           }
         }
         <button class="button--wide" type="submit" [disabled]="uploading() || !file()">
-          {{ uploading() ? 'Envoi en cours…' : 'Ajouter à ma bibliothèque' }} <span aria-hidden="true">→</span>
+          {{ uploading() ? 'Analyse et envoi…' : 'Analyser puis ajouter' }} <span aria-hidden="true">→</span>
         </button>
       </form>
       <p class="secure-note"><span aria-hidden="true">◈</span> Vos fichiers restent dans votre espace privé.</p>
@@ -127,7 +109,7 @@
         </label>
       </div>
       <details class="advanced-filters">
-        <summary>Filtres musicaux : BPM, tonalité, accordage, genre et niveau</summary>
+        <summary>Filtres musicaux : BPM et tonalité</summary>
         <div class="advanced-filter-grid">
           <label>BPM minimum
             <input type="number" min="20" max="300" [value]="bpmMinFilter()" (input)="setBpmMinFilter($event)" />
@@ -137,18 +119,6 @@
           </label>
           <label>Tonalité
             <input type="search" placeholder="Ex. La mineur" [value]="keyFilter()" (input)="setKeyFilter($event)" />
-          </label>
-          <label>Accordage
-            <input type="search" placeholder="Ex. Drop D" [value]="tuningFilter()" (input)="setTuningFilter($event)" />
-          </label>
-          <label>Genre
-            <input type="search" placeholder="Ex. Blues" [value]="genreFilter()" (input)="setGenreFilter($event)" />
-          </label>
-          <label>Niveau
-            <select [value]="levelFilter()" (change)="setLevelFilter($event)">
-              <option value="">Tous les niveaux</option><option value="debutant">Débutant</option>
-              <option value="intermediaire">Intermédiaire</option><option value="avance">Avancé</option>
-            </select>
           </label>
         </div>
       </details>
@@ -203,6 +173,7 @@
           <div class="track-grid">
             @for (track of visibleTracks(); track track.id) {
               <article class="track-card" [attr.aria-labelledby]="'track-' + track.id"
+                [class.queue-added]="recentlyQueuedTrackId() === track.id"
                 (contextmenu)="$event.preventDefault(); enqueue(track)">
                 <div class="track-card__topline">
                   <span class="track-art" aria-hidden="true">♫</span>
@@ -215,38 +186,32 @@
                 </div>
                 <h3 [id]="'track-' + track.id">{{ track.title }}</h3>
                 <p class="filename">{{ track.originalName }}</p>
-                <div class="bpm-display" [attr.aria-label]="track.bpm === null ? 'Tempo non renseigné' : track.bpm + ' battements par minute'">
-                  @if (track.bpm !== null) {
-                    <span class="bpm-value">{{ track.bpm }} <small>BPM</small></span>
-                    <span class="bpm-meter" aria-hidden="true"><i [style.width.%]="bpmVisualPercent(track.bpm)"></i></span>
+                <div class="waveform" role="img" [attr.aria-label]="'Forme d’onde de ' + track.title">
+                  @if (track.waveform.length) {
+                    @for (amplitude of track.waveform; track $index) {
+                      <i [style.height.%]="waveformHeight(amplitude)"
+                        [style.animation-delay.ms]="($index % 12) * 35"></i>
+                    }
+                  } @else if (waveformLoadingTrackId() === track.id) {
+                    <span class="waveform-status">Analyse de la forme d’onde…</span>
+                  } @else if (waveformErrorTrackId() === track.id) {
+                    <span class="waveform-status">Impossible de sauvegarder l’analyse</span>
                   } @else {
-                    <span class="bpm-missing">Tempo à renseigner</span>
+                    <span class="waveform-status">La forme d’onde apparaîtra après la première écoute</span>
                   }
                 </div>
-                <p class="track-tags">
-                  @if (track.key) { <span>{{ track.key }}</span> }
-                  @if (track.tuning) { <span>{{ track.tuning }}</span> }
-                  @if (track.genre) { <span>{{ track.genre }}</span> }
-                  @if (track.level) { <span>{{ track.level }}</span> }
-                </p>
-                @if (metadataEditTrackId() === track.id) {
-                  <form class="metadata-editor" [formGroup]="metadataForm" (ngSubmit)="saveMetadata(track)">
-                    <label>BPM <input type="number" min="20" max="300" formControlName="bpm" /></label>
-                    <label>Tonalité <input maxlength="24" formControlName="key" /></label>
-                    <label>Accordage <input maxlength="32" formControlName="tuning" /></label>
-                    <label>Genre <input maxlength="40" formControlName="genre" /></label>
-                    <label>Niveau
-                      <select formControlName="level">
-                        <option value="">Non défini</option><option value="debutant">Débutant</option>
-                        <option value="intermediaire">Intermédiaire</option><option value="avance">Avancé</option>
-                      </select>
-                    </label>
-                    @if (metadataError()) { <p class="error" role="alert">{{ metadataError() }}</p> }
-                    <button type="submit" [disabled]="metadataSaving()">Enregistrer</button>
-                    <button type="button" class="delete-track-button" (click)="cancelMetadataEdit()">Annuler</button>
-                  </form>
+                <div class="bpm-display" [attr.aria-label]="track.bpm === null ? 'Tempo non détecté' : track.bpm + ' battements par minute estimés'">
+                  @if (track.bpm !== null) {
+                    <span class="bpm-value">{{ track.bpm }} <small>BPM estimés</small></span>
+                    <span class="bpm-meter" aria-hidden="true"><i [style.width.%]="bpmVisualPercent(track.bpm)"></i></span>
+                  } @else {
+                    <span class="bpm-missing">Tempo non détecté automatiquement</span>
+                  }
+                </div>
+                @if (track.key) {
+                  <p class="track-key"><span aria-hidden="true">♫</span> {{ track.key }} estimée</p>
                 } @else {
-                  <button type="button" class="metadata-edit-button" (click)="editMetadata(track)">Modifier les infos musicales</button>
+                  <p class="track-key track-key--missing">Tonalité non détectée</p>
                 }
                 <dl>
                   <div><dt>Taille</dt><dd>{{ formatSize(track.size) }}</dd></div>
@@ -256,7 +221,8 @@
                   [disabled]="audioLoading() && currentTrack()?.id === track.id"
                   [attr.aria-label]="'Lire ' + track.title"><span aria-hidden="true">▶</span> Écouter</button>
                 <div class="track-extra-actions">
-                  <button type="button" (click)="enqueue(track)" title="Ajouter à la file d’attente">＋ File d’attente</button>
+                  <button type="button" [class.queue-added-button]="recentlyQueuedTrackId() === track.id"
+                    (click)="enqueue(track)" title="Ajouter à la file d’attente">＋ File d’attente</button>
                   <button type="button" (click)="addToPlaylist(track)" [disabled]="!selectedPlaylistId()"
                     title="Ajouter à la playlist sélectionnée">＋ Playlist</button>
                 </div>
@@ -277,27 +243,47 @@
                   <p>Aucune piste pour le moment. Importez votre première backing track pour la retrouver dans votre studio.</p>
                 }
               </div>
-              @if (queue().length) {
-                <section class="queue-panel" aria-labelledby="queue-title">
-                  <div class="queue-heading">
-                    <h3 id="queue-title">File d’attente <span>({{ queue().length }})</span></h3>
-                    <button type="button" class="button--refresh" (click)="queue.set([])">Vider</button>
-                  </div>
-                  <p>Les morceaux seront lus automatiquement à la fin de la piste en cours. Clic droit sur une carte ou bouton « File d’attente » pour ajouter.</p>
-                  <ol>
-                    @for (track of queue(); track track.id) {
-                      <li><button type="button" (click)="playQueued(track)">{{ track.title }}</button>
-                        <button type="button" class="delete-track-button" (click)="removeFromQueue(track.id)" [attr.aria-label]="'Retirer ' + track.title + ' de la file'">×</button>
-                      </li>
-                    }
-                  </ol>
-                </section>
-              }
-              @if (queueMessage()) { <p class="success" role="status">{{ queueMessage() }}</p> }
             }
           </div>
         }
       </div>
+      <section class="queue-panel" aria-labelledby="queue-title">
+        <div class="queue-heading">
+          <div><p class="eyebrow">LECTURE À SUIVRE</p><h3 id="queue-title">File d’attente <span>({{ queue().length }})</span></h3></div>
+          @if (queue().length) {
+            <button type="button" class="button--refresh" (click)="queue.set([])">Vider</button>
+          }
+        </div>
+        @if (queue().length) {
+          <p>Les titres seront joués automatiquement après la piste en cours. Clic droit sur une piste pour l’ajouter.</p>
+          <ol class="queue-list">
+            @for (queuedTrack of queue(); track queuedTrack.id; let position = $index) {
+              <li class="queue-item">
+                <span class="queue-position">{{ position + 1 }}</span>
+                <div class="queue-item-wave" aria-hidden="true">
+                  @for (amplitude of queuedTrack.waveform; track $index) {
+                    <i [style.height.%]="waveformHeight(amplitude)"></i>
+                  } @empty {
+                    <span>♫</span>
+                  }
+                </div>
+                <div class="queue-item-copy"><b>{{ queuedTrack.title }}</b><small>
+                  {{ queuedTrack.bpm ? queuedTrack.bpm + ' BPM' : 'Tempo inconnu' }}
+                  @if (queuedTrack.key) { · {{ queuedTrack.key }} }
+                </small></div>
+                <button class="queue-play" type="button" (click)="playQueued(queuedTrack)"
+                  [attr.aria-label]="'Lire maintenant ' + queuedTrack.title">▶</button>
+                <button class="queue-remove" type="button" (click)="removeFromQueue(queuedTrack.id)"
+                  [attr.aria-label]="'Retirer ' + queuedTrack.title + ' de la file'">×</button>
+              </li>
+            }
+          </ol>
+        } @else {
+          <div class="queue-empty"><span aria-hidden="true">♫</span><b>Rien dans la file pour l’instant</b>
+            <small>Ajoutez une piste avec le bouton ou faites un clic droit dessus.</small></div>
+        }
+        @if (queueMessage()) { <p class="queue-message" role="status">{{ queueMessage() }}</p> }
+      </section>
       @if (deleteSuccess()) {
         <app-snack-bar [message]="deleteSuccess()" type="success" (closed)="deleteSuccess.set('')" />
       } @else if (deleteError()) {

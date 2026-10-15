@@ -20,9 +20,14 @@ const schema = new mongoose.Schema(
     size: { type: Number, required: true, min: 0 },
     bpm: { type: Number, min: 20, max: 300, default: null },
     key: { type: String, trim: true, maxlength: 24, default: "" },
-    tuning: { type: String, trim: true, maxlength: 32, default: "" },
-    genre: { type: String, trim: true, maxlength: 40, default: "" },
-    level: { type: String, enum: ["debutant", "intermediaire", "avance", ""], default: "" },
+    waveform: {
+      type: [{ type: Number, min: 0, max: 1 }],
+      default: [],
+      validate: {
+        validator: (value) => value.length <= 128,
+        message: "La forme d’onde ne peut pas dépasser 128 points",
+      },
+    },
   },
   { timestamps: true },
 );
@@ -45,9 +50,7 @@ schema.methods.toPublic = function () {
     size: this.size,
     bpm: this.bpm ?? null,
     key: this.key || "",
-    tuning: this.tuning || "",
-    genre: this.genre || "",
-    level: this.level || "",
+    waveform: this.waveform || [],
     createdAt: this.createdAt,
   };
 };

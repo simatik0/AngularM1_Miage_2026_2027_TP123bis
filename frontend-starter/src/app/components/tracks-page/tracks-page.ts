@@ -4,21 +4,10 @@ import { Component, computed, DestroyRef, ElementRef, inject, signal, viewChild 
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { finalize, Subscription } from 'rxjs';
-import { Track, TrackMetadata } from '../../shared/models/track.model';
+import { Track, TrackAnalysis } from '../../shared/models/track.model';
 import { Playlist, TrackService } from '../../shared/services/track.service';
+import { AudioAnalysisService } from '../../shared/services/audio-analysis.service';
 import { SnackBarComponent } from '../snack-bar/snack-bar';
-
-type TrackMetadataControls = {
-  bpm: FormControl<number | null>;
-  key: FormControl<string>;
-  tuning: FormControl<string>;
-  genre: FormControl<string>;
-  level: FormControl<Track['level']>;
-};
-
-type TrackUploadControls = TrackMetadataControls & {
-  title: FormControl<string>;
-};
 
 @Component({
   imports: [DatePipe, ReactiveFormsModule, SnackBarComponent],
@@ -27,11 +16,14 @@ type TrackUploadControls = TrackMetadataControls & {
 })
 export class TracksPageComponent {
   private readonly service = inject(TrackService);
+  private readonly audioAnalysis = inject(AudioAnalysisService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
   private readonly audioPlayer = viewChild<ElementRef<HTMLAudioElement>>('audioPlayer');
   private listRequest?: Subscription;
   private audioRequest?: Subscription;
+  private queueAnimationTimeout?: ReturnType<typeof setTimeout>;
+  private destroyed = false;
 
   // Même limite et mêmes types MIME que Multer dans le backend.
   private readonly maxFileSize = 25 * 1024 * 1024;
@@ -48,6 +40,7 @@ export class TracksPageComponent {
   readonly loading = signal(false);
   readonly listError = signal('');
   readonly uploading = signal(false);
+  readonly analysisStatus = signal('');
   readonly uploadProgress = signal<number | null>(null);
   readonly uploadError = signal('');
   readonly uploadSuccess = signal('');
@@ -71,9 +64,6 @@ export class TracksPageComponent {
   readonly bpmMinFilter = signal('');
   readonly bpmMaxFilter = signal('');
   readonly keyFilter = signal('');
-  readonly tuningFilter = signal('');
-  readonly genreFilter = signal('');
-  readonly levelFilter = signal('');
   readonly favorites = signal<string[]>([]);
   readonly favoritesOnly = signal(false);
   readonly playlists = signal<Playlist[]>([]);
@@ -86,23 +76,14 @@ export class TracksPageComponent {
   readonly playlistError = signal('');
   readonly queue = signal<Track[]>([]);
   readonly queueMessage = signal('');
-  readonly metadataEditTrackId = signal<string | null>(null);
-  readonly metadataError = signal('');
-  readonly metadataSaving = signal(false);
-  readonly metadataForm = new FormGroup({
-    bpm: new FormControl<number | null>(null),
-    key: new FormControl('', { nonNullable: true }),
-    tuning: new FormControl('', { nonNullable: true }),
-    genre: new FormControl('', { nonNullable: true }),
-    level: new FormControl<Track['level']>('', { nonNullable: true }),
-  });
+  readonly recentlyQueuedTrackId = signal<string | null>(null);
+  readonly waveformLoadingTrackId = signal<string | null>(null);
+  readonly waveformErrorTrackId = signal<string | null>(null);
   readonly visibleTracks = computed(() => {
     const query = this.searchQuery().trim().toLocaleLowerCase();
     const bpmMin = this.bpmMinFilter() ? Number(this.bpmMinFilter()) : null;
     const bpmMax = this.bpmMaxFilter() ? Number(this.bpmMaxFilter()) : null;
     const keyQuery = this.keyFilter().trim().toLocaleLowerCase();
-    const tuningQuery = this.tuningFilter().trim().toLocaleLowerCase();
-    const genreQuery = this.genreFilter().trim().toLocaleLowerCase();
     const now = Date.now();
     const dateThreshold = this.dateFilter()
       ? now - Number(this.dateFilter()) * 24 * 60 * 60 * 1000
@@ -115,11 +96,8 @@ export class TracksPageComponent {
       const matchesDate = !dateThreshold || new Date(track.createdAt).getTime() >= dateThreshold;
       const matchesBpm = (bpmMin === null || (track.bpm !== null && track.bpm >= bpmMin)) &&
         (bpmMax === null || (track.bpm !== null && track.bpm <= bpmMax));
-      const matchesMusic = (!keyQuery || track.key.toLocaleLowerCase().includes(keyQuery)) &&
-        (!tuningQuery || track.tuning.toLocaleLowerCase().includes(tuningQuery)) &&
-        (!genreQuery || track.genre.toLocaleLowerCase().includes(genreQuery)) &&
-        (!this.levelFilter() || track.level === this.levelFilter());
-      return matchesQuery && matchesFormat && matchesDate && matchesBpm && matchesMusic &&
+      const matchesKey = !keyQuery || track.key.toLocaleLowerCase().includes(keyQuery);
+      return matchesQuery && matchesFormat && matchesDate && matchesBpm && matchesKey &&
         (!this.favoritesOnly() || this.favorites().includes(track.id));
     });
     return filtered.sort((first, second) => {
@@ -136,17 +114,16 @@ export class TracksPageComponent {
   );
   readonly form = new FormGroup({
     title: new FormControl('', { nonNullable: true }),
-    bpm: new FormControl<number | null>(null),
-    key: new FormControl('', { nonNullable: true }),
-    tuning: new FormControl('', { nonNullable: true }),
-    genre: new FormControl('', { nonNullable: true }),
-    level: new FormControl<Track['level']>('', { nonNullable: true }),
   });
   readonly title = this.form.controls.title;
   readonly file = signal<File | null>(null);
 
   constructor() {
-    this.destroyRef.onDestroy(() => this.releaseAudio());
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+      if (this.queueAnimationTimeout) clearTimeout(this.queueAnimationTimeout);
+      this.releaseAudio();
+    });
     this.load();
     this.loadPlaylists();
   }
@@ -184,28 +161,44 @@ export class TracksPageComponent {
     this.load(page);
   }
 
-  upload(): void {
+  async upload(): Promise<void> {
     if (this.uploading()) return;
 
     const file = this.file();
     this.uploadSuccess.set('');
     this.uploadError.set(this.validateFile(file));
     if (!file || this.uploadError()) return;
-    const uploadMetadata = this.metadataFromForm(this.form);
-    if (uploadMetadata.bpm !== null && (uploadMetadata.bpm < 20 || uploadMetadata.bpm > 300)) {
-      this.uploadError.set('Le BPM doit être compris entre 20 et 300.');
-      return;
-    }
 
     this.uploading.set(true);
-    this.uploadProgress.set(0);
+    this.analysisStatus.set('Analyse automatique du tempo, de la tonalité et de la forme d’onde…');
+    this.uploadProgress.set(null);
     const title = this.title.value.trim() || file.name;
     this.title.disable();
-    this.service.upload(file, title, uploadMetadata).pipe(
+    let analysis: TrackAnalysis;
+    try {
+      analysis = await this.audioAnalysis.analyze(file);
+    } catch (error: unknown) {
+      console.error('[TracksPage] Erreur d’analyse du fichier audio', error);
+      if (!this.destroyed) {
+        this.uploadError.set(
+          'Impossible d’analyser ce fichier audio dans votre navigateur. Essayez un MP3, WAV, OGG ou M4A lisible.',
+        );
+        this.uploading.set(false);
+        this.analysisStatus.set('');
+        this.title.enable();
+      }
+      return;
+    }
+    if (this.destroyed) return;
+
+    this.analysisStatus.set('Analyse terminée : envoi du morceau…');
+    this.uploadProgress.set(0);
+    this.service.upload(file, title, analysis).pipe(
       takeUntilDestroyed(this.destroyRef),
       finalize(() => {
         this.uploading.set(false);
         this.uploadProgress.set(null);
+        this.analysisStatus.set('');
         this.title.enable();
       }),
     ).subscribe({
@@ -222,11 +215,12 @@ export class TracksPageComponent {
           }
           console.debug('[TracksPage] Piste envoyée', track.id);
           this.title.reset();
-          this.form.patchValue({ bpm: null, key: '', tuning: '', genre: '', level: '' });
           this.file.set(null);
           const input = this.fileInput()?.nativeElement;
           if (input) input.value = '';
-          this.uploadSuccess.set(`« ${track.title} » a bien été ajouté.`);
+          const detectedKey = track.key ? ` · tonalité ${track.key} estimée` : '';
+          const detectedBpm = track.bpm ? `${track.bpm} BPM estimés` : 'tempo non détecté';
+          this.uploadSuccess.set(`« ${track.title} » a bien été ajouté (${detectedBpm}${detectedKey}).`);
           this.load(1);
         }
       },
@@ -253,6 +247,7 @@ export class TracksPageComponent {
       next: (blob) => {
         console.debug('[TracksPage] Audio chargé', track.id);
         this.audioUrl.set(URL.createObjectURL(blob));
+        if (!track.waveform.length) this.reanalyzeLegacyTrack(track, blob);
       },
       error: (error) => {
         const message = error instanceof HttpErrorResponse && error.status === 404
@@ -332,18 +327,6 @@ export class TracksPageComponent {
 
   setKeyFilter(event: Event): void {
     this.keyFilter.set((event.target as HTMLInputElement).value);
-  }
-
-  setTuningFilter(event: Event): void {
-    this.tuningFilter.set((event.target as HTMLInputElement).value);
-  }
-
-  setGenreFilter(event: Event): void {
-    this.genreFilter.set((event.target as HTMLInputElement).value);
-  }
-
-  setLevelFilter(event: Event): void {
-    this.levelFilter.set((event.target as HTMLSelectElement).value);
   }
 
   setPlaylistName(event: Event): void {
@@ -430,44 +413,8 @@ export class TracksPageComponent {
     return Math.max(8, Math.min(100, ((bpm - 20) / 280) * 100));
   }
 
-  editMetadata(track: Track): void {
-    this.metadataError.set('');
-    this.metadataEditTrackId.set(track.id);
-    this.metadataForm.setValue({
-      bpm: track.bpm,
-      key: track.key,
-      tuning: track.tuning,
-      genre: track.genre,
-      level: track.level,
-    });
-  }
-
-  saveMetadata(track: Track): void {
-    if (this.metadataSaving()) return;
-    const metadata = this.metadataFromForm(this.metadataForm);
-    if (metadata.bpm !== null && (metadata.bpm < 20 || metadata.bpm > 300)) {
-      this.metadataError.set('Le BPM doit être compris entre 20 et 300.');
-      return;
-    }
-    this.metadataSaving.set(true);
-    this.metadataError.set('');
-    this.service.updateMetadata(track.id, metadata).pipe(
-      finalize(() => this.metadataSaving.set(false)),
-    ).subscribe({
-      next: (updatedTrack) => {
-        this.tracks.update((tracks) => tracks.map((item) => item.id === updatedTrack.id ? updatedTrack : item));
-        this.metadataEditTrackId.set(null);
-      },
-      error: (error: unknown) => {
-        console.error('[TracksPage] Erreur de mise à jour des métadonnées', error);
-        this.metadataError.set(this.errorMessage(error, 'Impossible d’enregistrer ces informations.'));
-      },
-    });
-  }
-
-  cancelMetadataEdit(): void {
-    this.metadataEditTrackId.set(null);
-    this.metadataError.set('');
+  waveformHeight(amplitude: number): number {
+    return Math.max(8, amplitude * 100);
   }
 
   loadPlaylists(): void {
@@ -554,6 +501,9 @@ export class TracksPageComponent {
       return;
     }
     this.queue.update((items) => [...items, track]);
+    this.recentlyQueuedTrackId.set(track.id);
+    if (this.queueAnimationTimeout) clearTimeout(this.queueAnimationTimeout);
+    this.queueAnimationTimeout = setTimeout(() => this.recentlyQueuedTrackId.set(null), 900);
     this.queueMessage.set(`« ${track.title} » ajouté à la file d’attente.`);
   }
 
@@ -570,17 +520,29 @@ export class TracksPageComponent {
     this.playlists.update((items) => items.map((item) => item.id === updated.id ? updated : item));
   }
 
-  private metadataFromForm(
-    form: FormGroup<TrackMetadataControls> | FormGroup<TrackUploadControls>,
-  ): TrackMetadata {
-    const { bpm, key, tuning, genre, level } = form.controls;
-    return {
-      bpm: bpm.value,
-      key: key.value.trim(),
-      tuning: tuning.value.trim(),
-      genre: genre.value.trim(),
-      level: level.value,
-    };
+  private reanalyzeLegacyTrack(track: Track, blob: Blob): void {
+    this.waveformLoadingTrackId.set(track.id);
+    this.waveformErrorTrackId.set(null);
+    this.audioAnalysis.analyze(blob).then((analysis) => {
+      if (this.destroyed) return;
+      this.service.updateAnalysis(track.id, analysis).pipe(
+        finalize(() => this.waveformLoadingTrackId.set(null)),
+      ).subscribe({
+        next: (updatedTrack) => {
+          this.tracks.update((tracks) => tracks.map((item) => item.id === updatedTrack.id ? updatedTrack : item));
+          if (this.currentTrack()?.id === updatedTrack.id) this.currentTrack.set(updatedTrack);
+        },
+        error: (error: unknown) => {
+          console.error('[TracksPage] Impossible de sauvegarder l’analyse audio', error);
+          this.waveformLoadingTrackId.set(null);
+          this.waveformErrorTrackId.set(track.id);
+        },
+      });
+    }).catch((error: unknown) => {
+      console.error('[TracksPage] Impossible de réanalyser un ancien morceau', error);
+      this.waveformLoadingTrackId.set(null);
+      this.waveformErrorTrackId.set(track.id);
+    });
   }
 
   formatTime(seconds: number): string {

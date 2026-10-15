@@ -93,7 +93,7 @@ test("schémas Mongoose et relation", async () => {
   );
 });
 
-test("mise à jour authentifiée des métadonnées d'une piste", async () => {
+test("mise à jour authentifiée des résultats d'analyse audio", async () => {
   const originalFindOneAndUpdate = Track.findOneAndUpdate;
   const originalExists = RevokedToken.exists;
   const ownerId = new mongoose.Types.ObjectId();
@@ -101,9 +101,7 @@ test("mise à jour authentifiée des métadonnées d'une piste", async () => {
   const expected = {
     bpm: 128,
     key: "La mineur",
-    tuning: "E standard",
-    genre: "Blues",
-    level: "intermediaire",
+    waveform: Array.from({ length: 128 }, (_, index) => (index % 8) / 8),
   };
   Track.findOneAndUpdate = async (filter, update, options) => {
     assert.deepEqual(filter, { _id: String(trackId), ownerId: String(ownerId) });
@@ -128,6 +126,35 @@ test("mise à jour authentifiée des métadonnées d'une piste", async () => {
     assert.deepEqual(await response.json(), { id: String(trackId), ...expected });
   } finally {
     Track.findOneAndUpdate = originalFindOneAndUpdate;
+    RevokedToken.exists = originalExists;
+  }
+});
+
+test("refuse une forme d'onde invalide et nettoie le fichier audio temporaire", async () => {
+  const originalExists = RevokedToken.exists;
+  const ownerId = new mongoose.Types.ObjectId();
+  RevokedToken.exists = async () => null;
+  const secret = process.env.JWT_SECRET || "tp1-development-secret";
+  const value = jwt.sign({ sub: String(ownerId) }, secret, { expiresIn: "2h" });
+  const uploadsPath = path.resolve("data/uploads");
+  const before = await fsPromises.readdir(uploadsPath);
+
+  try {
+    const body = new FormData();
+    body.append("audio", new Blob(["audio data"], { type: "audio/mpeg" }), "test.mp3");
+    body.append("title", "Test");
+    body.append("bpm", "120");
+    body.append("key", "Do majeur");
+    body.append("waveform", "[]");
+    const response = await fetch(`${base}/api/tracks`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${value}` },
+      body,
+    });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).message, "Analyse audio invalide");
+    assert.deepEqual(await fsPromises.readdir(uploadsPath), before);
+  } finally {
     RevokedToken.exists = originalExists;
   }
 });

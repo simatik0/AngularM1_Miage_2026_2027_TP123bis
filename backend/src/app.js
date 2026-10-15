@@ -155,6 +155,30 @@ const uploadAvatar = multer({
   },
 });
 
+function parseAudioAnalysis(body) {
+  const bpm = body?.bpm === "" || body?.bpm === undefined || body?.bpm === null
+    ? null
+    : Number(body.bpm);
+  let waveform;
+  try {
+    waveform = JSON.parse(body?.waveform || "null");
+  } catch {
+    waveform = null;
+  }
+  const key = typeof body?.key === "string" ? body.key.trim() : "";
+  if (
+    (bpm !== null && (!Number.isFinite(bpm) || bpm < 20 || bpm > 300)) ||
+    key.length > 24 ||
+    !Array.isArray(waveform) || waveform.length !== 128 ||
+    waveform.some((point) => typeof point !== "number" || !Number.isFinite(point) || point < 0 || point > 1)
+  ) {
+    const error = new Error("Analyse audio invalide");
+    error.status = 400;
+    throw error;
+  }
+  return { bpm, key, waveform };
+}
+
 /**
  * Construit l'application Express sans ouvrir de port.
  * Cette séparation permet au serveur réel et aux tests de créer la même
@@ -425,9 +449,7 @@ export function createApp() {
         id: String(track._id),
         bpm: track.bpm ?? null,
         key: track.key || "",
-        tuning: track.tuning || "",
-        genre: track.genre || "",
-        level: track.level || "",
+        waveform: track.waveform || [],
         _id: undefined,
       }));
 
@@ -449,15 +471,15 @@ export function createApp() {
   });
 
   /**
-   * Reçoit le champ multipart audio et le champ texte title.
+   * Reçoit le fichier audio, son titre et l'analyse calculée par le navigateur.
    * upload.single("audio") traite un seul fichier et le place dans req.file,
    * tandis que req.body.title contient le champ texte associé.
    * C'est ici qu'est fait l'upload de fichiers sur le serveur. 
    * Le middleware auth vérifie le JWT avant d'accepter l'upload.
    * Le middleware upload.single("audio") traite le fichier audio envoyé dans le champ "audio" du formulaire
    * ou de l'appel depuis le frontend avec un objet FormData.
-   * Si le fichier est accepté, il est stocké sur le disque et ses métadonnées sont enregistrées 
-   * dans MongoDB.
+   * Le serveur stocke le fichier audio sur le disque et l'analyse ainsi que les
+   * métadonnées sont enregistrées dans MongoDB.
    */
   app.post(
     "/api/tracks",
@@ -470,6 +492,7 @@ export function createApp() {
           return res.status(400).json({ message: "Fichier audio requis" });
         }
 
+        const analysis = parseAudioAnalysis(req.body);
         const track = await Track.create({
           ownerId: req.auth.sub,
           title: req.body.title || req.file.originalname,
@@ -477,11 +500,7 @@ export function createApp() {
           storedName: req.file.filename,
           mimeType: req.file.mimetype,
           size: req.file.size,
-          bpm: req.body.bpm ? Number(req.body.bpm) : null,
-          key: req.body.key || "",
-          tuning: req.body.tuning || "",
-          genre: req.body.genre || "",
-          level: req.body.level || "",
+          ...analysis,
         });
 
         console.log(`[tracks] Upload enregistré : ${track.id}`);
@@ -501,6 +520,7 @@ export function createApp() {
               `[tracks] Impossible de supprimer le fichier temporaire ${uploadedPath}`,
               cleanupError,
             );
+            return next(cleanupError);
           }
         }
         next(error);
@@ -510,14 +530,31 @@ export function createApp() {
 
   app.put("/api/tracks/:id", auth, async (req, res, next) => {
     try {
-      const allowedFields = ["bpm", "key", "tuning", "genre", "level"];
       const updates = {};
-      for (const field of allowedFields) {
-        if (Object.hasOwn(req.body || {}, field)) {
-          updates[field] = field === "bpm" && req.body[field] !== null && req.body[field] !== ""
-            ? Number(req.body[field])
-            : req.body[field];
+      if (Object.hasOwn(req.body || {}, "bpm")) {
+        const bpm = req.body.bpm === null ? null : Number(req.body.bpm);
+        if (bpm !== null && (!Number.isFinite(bpm) || bpm < 20 || bpm > 300)) {
+          return res.status(400).json({ message: "Tempo estimé invalide" });
         }
+        updates.bpm = bpm;
+      }
+      if (Object.hasOwn(req.body || {}, "key")) {
+        if (typeof req.body.key !== "string" || req.body.key.length > 24) {
+          return res.status(400).json({ message: "Tonalité estimée invalide" });
+        }
+        updates.key = req.body.key;
+      }
+      if (Object.hasOwn(req.body || {}, "waveform")) {
+        if (
+          !Array.isArray(req.body.waveform) || req.body.waveform.length !== 128 ||
+          req.body.waveform.some((point) => typeof point !== "number" || !Number.isFinite(point) || point < 0 || point > 1)
+        ) {
+          return res.status(400).json({ message: "Forme d’onde invalide" });
+        }
+        updates.waveform = req.body.waveform;
+      }
+      if (!Object.keys(updates).length) {
+        return res.status(400).json({ message: "Aucune analyse audio fournie" });
       }
       const track = await Track.findOneAndUpdate(
         { _id: req.params.id, ownerId: req.auth.sub },
@@ -710,6 +747,9 @@ export function createApp() {
       return res.status(400).json({ message: error.message });
     }
     if (error?.name === "ValidationError") {
+      return res.status(400).json({ message: error.message });
+    }
+    if (error?.status === 400) {
       return res.status(400).json({ message: error.message });
     }
     if (error?.name === "CastError") {
