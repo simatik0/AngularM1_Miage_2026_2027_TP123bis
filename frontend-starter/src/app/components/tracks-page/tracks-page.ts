@@ -1,13 +1,26 @@
 import { DatePipe } from '@angular/common';
 import { HttpErrorResponse, HttpEventType } from '@angular/common/http';
-import { Component, computed, DestroyRef, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, HostListener, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { finalize, Subscription } from 'rxjs';
-import { Track, TrackAnalysis } from '../../shared/models/track.model';
+import { Track, TrackAnalysis, TrackMetadata } from '../../shared/models/track.model';
 import { Playlist, TrackService } from '../../shared/services/track.service';
+import { AudioPlaybackService } from '../../shared/services/audio-playback.service';
 import { AudioAnalysisService } from '../../shared/services/audio-analysis.service';
 import { SnackBarComponent } from '../snack-bar/snack-bar';
+
+type TrackMetadataControls = {
+  bpm: FormControl<number | null>;
+  key: FormControl<string>;
+  tuning: FormControl<string>;
+  genre: FormControl<string>;
+  level: FormControl<Track['level']>;
+};
+
+type TrackUploadControls = TrackMetadataControls & {
+  title: FormControl<string>;
+};
 
 @Component({
   imports: [DatePipe, ReactiveFormsModule, SnackBarComponent],
@@ -16,13 +29,11 @@ import { SnackBarComponent } from '../snack-bar/snack-bar';
 })
 export class TracksPageComponent {
   private readonly service = inject(TrackService);
+  private readonly playback = inject(AudioPlaybackService);
   private readonly audioAnalysis = inject(AudioAnalysisService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
-  private readonly audioPlayer = viewChild<ElementRef<HTMLAudioElement>>('audioPlayer');
   private listRequest?: Subscription;
-  private audioRequest?: Subscription;
-  private queueAnimationTimeout?: ReturnType<typeof setTimeout>;
   private destroyed = false;
 
   // Même limite et mêmes types MIME que Multer dans le backend.
@@ -44,19 +55,16 @@ export class TracksPageComponent {
   readonly uploadProgress = signal<number | null>(null);
   readonly uploadError = signal('');
   readonly uploadSuccess = signal('');
-  readonly audioLoading = signal(false);
-  readonly audioError = signal('');
+  readonly audioLoading = this.playback.audioLoading;
+  readonly audioError = this.playback.audioError;
   readonly deleteError = signal('');
   readonly deleteSuccess = signal('');
   readonly deletingTrackId = signal<string | null>(null);
-  readonly currentTrack = signal<Track | null>(null);
-  readonly audioUrl = signal('');
-  readonly currentTime = signal(0);
-  readonly duration = signal(0);
-  readonly isPlaying = signal(false);
-  readonly volume = signal(1);
-  readonly playbackRate = signal(1);
-  readonly repeatTrack = signal(false);
+  readonly currentTrack = this.playback.currentTrack;
+  readonly audioUrl = this.playback.audioUrl;
+  readonly currentTime = this.playback.currentTime;
+  readonly duration = this.playback.duration;
+  readonly isPlaying = this.playback.isPlaying;
   readonly searchQuery = signal('');
   readonly formatFilter = signal('');
   readonly dateFilter = signal('');
@@ -64,26 +72,38 @@ export class TracksPageComponent {
   readonly bpmMinFilter = signal('');
   readonly bpmMaxFilter = signal('');
   readonly keyFilter = signal('');
+  readonly tuningFilter = signal('');
+  readonly genreFilter = signal('');
+  readonly levelFilter = signal('');
   readonly favorites = signal<string[]>([]);
   readonly favoritesOnly = signal(false);
   readonly playlists = signal<Playlist[]>([]);
-  readonly selectedPlaylistId = signal('');
-  readonly selectedPlaylist = computed(() =>
-    this.playlists().find((playlist) => playlist.id === this.selectedPlaylistId()) ?? null,
-  );
-  readonly playlistName = signal('');
-  readonly playlistMessage = signal('');
   readonly playlistError = signal('');
-  readonly queue = signal<Track[]>([]);
-  readonly queueMessage = signal('');
-  readonly recentlyQueuedTrackId = signal<string | null>(null);
-  readonly waveformLoadingTrackId = signal<string | null>(null);
-  readonly waveformErrorTrackId = signal<string | null>(null);
+  readonly playlistDialogOpen = signal(false);
+  readonly playlistDraftName = signal('');
+  readonly pendingPlaylistTrack = signal<Track | null>(null);
+  readonly createdPlaylistForTrack = signal<Playlist | null>(null);
+  readonly trackMenu = signal<Track | null>(null);
+  readonly trackMenuX = signal(0);
+  readonly trackMenuY = signal(0);
+  readonly queue = this.playback.queue;
+  readonly metadataEditTrackId = signal<string | null>(null);
+  readonly metadataError = signal('');
+  readonly metadataSaving = signal(false);
+  readonly metadataForm = new FormGroup({
+    bpm: new FormControl<number | null>(null),
+    key: new FormControl('', { nonNullable: true }),
+    tuning: new FormControl('', { nonNullable: true }),
+    genre: new FormControl('', { nonNullable: true }),
+    level: new FormControl<Track['level']>('', { nonNullable: true }),
+  });
   readonly visibleTracks = computed(() => {
     const query = this.searchQuery().trim().toLocaleLowerCase();
     const bpmMin = this.bpmMinFilter() ? Number(this.bpmMinFilter()) : null;
     const bpmMax = this.bpmMaxFilter() ? Number(this.bpmMaxFilter()) : null;
     const keyQuery = this.keyFilter().trim().toLocaleLowerCase();
+    const tuningQuery = this.tuningFilter().trim().toLocaleLowerCase();
+    const genreQuery = this.genreFilter().trim().toLocaleLowerCase();
     const now = Date.now();
     const dateThreshold = this.dateFilter()
       ? now - Number(this.dateFilter()) * 24 * 60 * 60 * 1000
@@ -96,8 +116,11 @@ export class TracksPageComponent {
       const matchesDate = !dateThreshold || new Date(track.createdAt).getTime() >= dateThreshold;
       const matchesBpm = (bpmMin === null || (track.bpm !== null && track.bpm >= bpmMin)) &&
         (bpmMax === null || (track.bpm !== null && track.bpm <= bpmMax));
-      const matchesKey = !keyQuery || track.key.toLocaleLowerCase().includes(keyQuery);
-      return matchesQuery && matchesFormat && matchesDate && matchesBpm && matchesKey &&
+      const matchesMusic = (!keyQuery || track.key.toLocaleLowerCase().includes(keyQuery)) &&
+        (!tuningQuery || track.tuning.toLocaleLowerCase().includes(tuningQuery)) &&
+        (!genreQuery || track.genre.toLocaleLowerCase().includes(genreQuery)) &&
+        (!this.levelFilter() || track.level === this.levelFilter());
+      return matchesQuery && matchesFormat && matchesDate && matchesBpm && matchesMusic &&
         (!this.favoritesOnly() || this.favorites().includes(track.id));
     });
     return filtered.sort((first, second) => {
@@ -114,6 +137,11 @@ export class TracksPageComponent {
   );
   readonly form = new FormGroup({
     title: new FormControl('', { nonNullable: true }),
+    bpm: new FormControl<number | null>(null),
+    key: new FormControl('', { nonNullable: true }),
+    tuning: new FormControl('', { nonNullable: true }),
+    genre: new FormControl('', { nonNullable: true }),
+    level: new FormControl<Track['level']>('', { nonNullable: true }),
   });
   readonly title = this.form.controls.title;
   readonly file = signal<File | null>(null);
@@ -121,8 +149,6 @@ export class TracksPageComponent {
   constructor() {
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
-      if (this.queueAnimationTimeout) clearTimeout(this.queueAnimationTimeout);
-      this.releaseAudio();
     });
     this.load();
     this.loadPlaylists();
@@ -168,12 +194,17 @@ export class TracksPageComponent {
     this.uploadSuccess.set('');
     this.uploadError.set(this.validateFile(file));
     if (!file || this.uploadError()) return;
+    const uploadMetadata = this.metadataFromForm(this.form);
+    if (uploadMetadata.bpm !== null && (uploadMetadata.bpm < 20 || uploadMetadata.bpm > 300)) {
+      this.uploadError.set('Le BPM doit être compris entre 20 et 300.');
+      return;
+    }
 
     this.uploading.set(true);
-    this.analysisStatus.set('Analyse automatique du tempo, de la tonalité et de la forme d’onde…');
+    this.analysisStatus.set('Analyse audio en cours…');
     this.uploadProgress.set(null);
     const title = this.title.value.trim() || file.name;
-    this.title.disable();
+    this.form.disable();
     let analysis: TrackAnalysis;
     try {
       analysis = await this.audioAnalysis.analyze(file);
@@ -185,21 +216,21 @@ export class TracksPageComponent {
         );
         this.uploading.set(false);
         this.analysisStatus.set('');
-        this.title.enable();
+        this.form.enable();
       }
       return;
     }
     if (this.destroyed) return;
 
-    this.analysisStatus.set('Analyse terminée : envoi du morceau…');
+    this.analysisStatus.set('Analyse terminée, envoi du morceau…');
     this.uploadProgress.set(0);
-    this.service.upload(file, title, analysis).pipe(
+    this.service.upload(file, title, uploadMetadata, analysis).pipe(
       takeUntilDestroyed(this.destroyRef),
       finalize(() => {
         this.uploading.set(false);
         this.uploadProgress.set(null);
         this.analysisStatus.set('');
-        this.title.enable();
+        this.form.enable();
       }),
     ).subscribe({
       next: (event) => {
@@ -215,12 +246,11 @@ export class TracksPageComponent {
           }
           console.debug('[TracksPage] Piste envoyée', track.id);
           this.title.reset();
+          this.form.patchValue({ bpm: null, key: '', tuning: '', genre: '', level: '' });
           this.file.set(null);
           const input = this.fileInput()?.nativeElement;
           if (input) input.value = '';
-          const detectedKey = track.key ? ` · tonalité ${track.key} estimée` : '';
-          const detectedBpm = track.bpm ? `${track.bpm} BPM estimés` : 'tempo non détecté';
-          this.uploadSuccess.set(`« ${track.title} » a bien été ajouté (${detectedBpm}${detectedKey}).`);
+          this.uploadSuccess.set(`« ${track.title} » a bien été ajouté.`);
           this.load(1);
         }
       },
@@ -231,31 +261,7 @@ export class TracksPageComponent {
   }
 
   play(track: Track): void {
-    this.removeFromQueue(track.id);
-    this.audioRequest?.unsubscribe();
-    this.releaseAudio();
-    this.currentTrack.set(track);
-    this.currentTime.set(0);
-    this.duration.set(0);
-    this.isPlaying.set(false);
-    this.audioError.set('');
-    this.audioLoading.set(true);
-    this.audioRequest = this.service.audio(track.id).pipe(
-      takeUntilDestroyed(this.destroyRef),
-      finalize(() => this.audioLoading.set(false)),
-    ).subscribe({
-      next: (blob) => {
-        console.debug('[TracksPage] Audio chargé', track.id);
-        this.audioUrl.set(URL.createObjectURL(blob));
-        if (!track.waveform.length) this.reanalyzeLegacyTrack(track, blob);
-      },
-      error: (error) => {
-        const message = error instanceof HttpErrorResponse && error.status === 404
-          ? 'Cette piste est introuvable ou ne vous appartient pas.'
-          : 'Impossible de charger cet audio. Réessayez.';
-        this.audioError.set(this.errorMessage(error, message));
-      },
-    });
+    this.playback.play(track);
   }
 
   delete(track: Track): void {
@@ -329,75 +335,119 @@ export class TracksPageComponent {
     this.keyFilter.set((event.target as HTMLInputElement).value);
   }
 
-  setPlaylistName(event: Event): void {
-    this.playlistName.set((event.target as HTMLInputElement).value);
+  setTuningFilter(event: Event): void {
+    this.tuningFilter.set((event.target as HTMLInputElement).value);
   }
 
-  setSelectedPlaylist(event: Event): void {
-    this.selectedPlaylistId.set((event.target as HTMLSelectElement).value);
+  setGenreFilter(event: Event): void {
+    this.genreFilter.set((event.target as HTMLInputElement).value);
   }
 
-  togglePlayback(): void {
-    const audio = this.audioPlayer()?.nativeElement;
-    if (!audio || !this.audioUrl()) return;
-    if (audio.paused) {
-      void audio.play().catch((error: unknown) => {
-        this.audioError.set(this.errorMessage(error, 'Impossible de démarrer la lecture audio.'));
+  setLevelFilter(event: Event): void {
+    this.levelFilter.set((event.target as HTMLSelectElement).value);
+  }
+
+  showTrackMenu(event: MouseEvent, track: Track): void {
+    event.preventDefault();
+    this.trackMenu.set(track);
+    this.trackMenuX.set(Math.max(8, Math.min(event.clientX, window.innerWidth - 220)));
+    this.trackMenuY.set(Math.max(8, Math.min(event.clientY, window.innerHeight - 180)));
+  }
+
+  @HostListener('document:click', ['$event'])
+  closeTrackMenuOnOutsideClick(event: MouseEvent): void {
+    const target = event.target;
+    if (target instanceof Element && target.closest('.track-context-menu, .track-row__more')) return;
+    this.trackMenu.set(null);
+  }
+
+  closeTrackMenu(): void {
+    this.trackMenu.set(null);
+  }
+
+  openPlaylistDialog(track: Track): void {
+    this.pendingPlaylistTrack.set(track);
+    this.createdPlaylistForTrack.set(null);
+    this.playlistDraftName.set('');
+    this.playlistError.set('');
+    this.playlistDialogOpen.set(true);
+    this.closeTrackMenu();
+  }
+
+  closePlaylistDialog(): void {
+    this.playlistDialogOpen.set(false);
+    this.pendingPlaylistTrack.set(null);
+    this.createdPlaylistForTrack.set(null);
+    this.playlistError.set('');
+  }
+
+  setPlaylistDraftName(event: Event): void {
+    this.playlistDraftName.set((event.target as HTMLInputElement).value);
+  }
+
+  addTrackToPlaylist(playlistId: string, track: Track): void {
+    this.playlistError.set('');
+    this.service.updatePlaylistTrack(playlistId, track.id, 'add')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updated) => {
+          this.replacePlaylist(updated);
+          this.closeTrackMenu();
+        },
+        error: (error: unknown) => {
+          console.error('[TracksPage] Erreur d’ajout à la playlist', error);
+          this.playlistError.set(this.errorMessage(error, 'Impossible d’ajouter cette piste à la playlist.'));
+        },
       });
-    } else {
-      audio.pause();
+  }
+
+  createPlaylistForTrack(): void {
+    const existingPlaylist = this.createdPlaylistForTrack();
+    if (existingPlaylist) {
+      this.addCreatedPlaylistTrack(existingPlaylist);
+      return;
     }
-  }
-
-  seek(event: Event): void {
-    const audio = this.audioPlayer()?.nativeElement;
-    const target = event.target as HTMLInputElement;
-    const nextTime = Number(target.value);
-    if (!audio || !Number.isFinite(nextTime)) return;
-    audio.currentTime = nextTime;
-    this.currentTime.set(nextTime);
-  }
-
-  setVolume(event: Event): void {
-    const nextVolume = Number((event.target as HTMLInputElement).value);
-    if (!Number.isFinite(nextVolume)) return;
-    this.volume.set(nextVolume);
-    const audio = this.audioPlayer()?.nativeElement;
-    if (audio) audio.volume = nextVolume;
-  }
-
-  setPlaybackRate(event: Event): void {
-    const nextRate = Number((event.target as HTMLSelectElement).value);
-    if (!Number.isFinite(nextRate)) return;
-    this.playbackRate.set(nextRate);
-    const audio = this.audioPlayer()?.nativeElement;
-    if (audio) audio.playbackRate = nextRate;
-  }
-
-  toggleRepeat(): void {
-    this.repeatTrack.update((repeat) => !repeat);
-    const audio = this.audioPlayer()?.nativeElement;
-    if (audio) audio.loop = this.repeatTrack();
-  }
-
-  syncAudioTime(): void {
-    const audio = this.audioPlayer()?.nativeElement;
-    if (!audio) return;
-    this.currentTime.set(audio.currentTime);
-    if (Number.isFinite(audio.duration)) this.duration.set(audio.duration);
-  }
-
-  onPlaybackChange(playing: boolean): void {
-    this.isPlaying.set(playing);
-  }
-
-  onAudioEnded(): void {
-    this.isPlaying.set(false);
-    const [next, ...remaining] = this.queue();
-    if (next) {
-      this.queue.set(remaining);
-      this.play(next);
+    const name = this.playlistDraftName().trim();
+    const track = this.pendingPlaylistTrack();
+    if (!track) return;
+    if (!name || name.length > 60) {
+      this.playlistError.set('Le nom doit contenir de 1 à 60 caractères.');
+      return;
     }
+    this.playlistError.set('');
+    this.service.createPlaylist(name).pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe({
+      next: (playlist) => {
+        this.playlists.update((items) => [playlist, ...items]);
+        this.createdPlaylistForTrack.set(playlist);
+        this.addCreatedPlaylistTrack(playlist);
+      },
+      error: (error: unknown) => {
+        console.error('[TracksPage] Erreur de création de playlist', error);
+        this.playlistError.set(this.errorMessage(error, 'Impossible de créer cette playlist.'));
+      },
+    });
+  }
+
+  private addCreatedPlaylistTrack(playlist: Playlist): void {
+    const track = this.pendingPlaylistTrack();
+    if (!track) return;
+    this.service.updatePlaylistTrack(playlist.id, track.id, 'add')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updated) => {
+          this.replacePlaylist(updated);
+          this.closePlaylistDialog();
+        },
+        error: (error: unknown) => {
+          console.error('[TracksPage] Playlist créée, mais piste non ajoutée', error);
+          this.playlistError.set(this.errorMessage(
+            error,
+            `La playlist « ${playlist.name} » est créée, mais impossible d’y ajouter cette piste. Réessayez.`,
+          ));
+        },
+      });
   }
 
   formatLabel(mimeType: string): string {
@@ -409,16 +459,48 @@ export class TracksPageComponent {
     return subtype.toUpperCase();
   }
 
-  bpmVisualPercent(bpm: number): number {
-    return Math.max(8, Math.min(100, ((bpm - 20) / 280) * 100));
+  editMetadata(track: Track): void {
+    this.metadataError.set('');
+    this.metadataEditTrackId.set(track.id);
+    this.metadataForm.setValue({
+      bpm: track.bpm,
+      key: track.key,
+      tuning: track.tuning,
+      genre: track.genre,
+      level: track.level,
+    });
   }
 
-  waveformHeight(amplitude: number): number {
-    return Math.max(8, amplitude * 100);
+  saveMetadata(track: Track): void {
+    if (this.metadataSaving()) return;
+    const metadata = this.metadataFromForm(this.metadataForm);
+    if (metadata.bpm !== null && (metadata.bpm < 20 || metadata.bpm > 300)) {
+      this.metadataError.set('Le BPM doit être compris entre 20 et 300.');
+      return;
+    }
+    this.metadataSaving.set(true);
+    this.metadataError.set('');
+    this.service.updateMetadata(track.id, metadata).pipe(
+      finalize(() => this.metadataSaving.set(false)),
+    ).subscribe({
+      next: (updatedTrack) => {
+        this.tracks.update((tracks) => tracks.map((item) => item.id === updatedTrack.id ? updatedTrack : item));
+        this.metadataEditTrackId.set(null);
+      },
+      error: (error: unknown) => {
+        console.error('[TracksPage] Erreur de mise à jour des métadonnées', error);
+        this.metadataError.set(this.errorMessage(error, 'Impossible d’enregistrer ces informations.'));
+      },
+    });
+  }
+
+  cancelMetadataEdit(): void {
+    this.metadataEditTrackId.set(null);
+    this.metadataError.set('');
   }
 
   loadPlaylists(): void {
-    this.service.playlists().subscribe({
+    this.service.playlists().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (playlists) => this.playlists.set(playlists),
       error: (error: unknown) => {
         console.error('[TracksPage] Erreur de chargement des playlists', error);
@@ -427,146 +509,38 @@ export class TracksPageComponent {
     });
   }
 
-  createPlaylist(): void {
-    const name = this.playlistName().trim();
-    if (!name || name.length > 60) {
-      this.playlistError.set('Le nom doit contenir de 1 à 60 caractères.');
-      return;
-    }
-    this.playlistError.set('');
-    this.service.createPlaylist(name).subscribe({
-      next: (playlist) => {
-        this.playlists.update((playlists) => [playlist, ...playlists]);
-        this.selectedPlaylistId.set(playlist.id);
-        this.playlistName.set('');
-        this.playlistMessage.set(`Playlist « ${playlist.name} » créée.`);
-      },
-      error: (error: unknown) => {
-        console.error('[TracksPage] Erreur de création de playlist', error);
-        this.playlistError.set(this.errorMessage(error, 'Impossible de créer cette playlist.'));
-      },
-    });
-  }
-
-  addToPlaylist(track: Track): void {
-    const playlistId = this.selectedPlaylistId();
-    if (!playlistId) {
-      this.playlistError.set('Créez ou choisissez une playlist avant d’y ajouter un morceau.');
-      return;
-    }
-    this.service.updatePlaylistTrack(playlistId, track.id, 'add').subscribe({
-      next: (playlist) => {
-        this.replacePlaylist(playlist);
-        this.playlistMessage.set(`« ${track.title} » ajouté à « ${playlist.name} ».`);
-        this.playlistError.set('');
-      },
-      error: (error: unknown) => {
-        console.error('[TracksPage] Erreur d’ajout à la playlist', error);
-        this.playlistError.set(this.errorMessage(error, 'Impossible de modifier cette playlist.'));
-      },
-    });
-  }
-
-  removeFromPlaylist(trackId: string): void {
-    const playlist = this.playlists().find((item) => item.id === this.selectedPlaylistId());
-    if (!playlist) return;
-    this.service.updatePlaylistTrack(playlist.id, trackId, 'remove').subscribe({
-      next: (updated) => this.replacePlaylist(updated),
-      error: (error: unknown) => {
-        console.error('[TracksPage] Erreur de retrait de playlist', error);
-        this.playlistError.set(this.errorMessage(error, 'Impossible de modifier cette playlist.'));
-      },
-    });
-  }
-
-  deletePlaylist(): void {
-    const playlist = this.playlists().find((item) => item.id === this.selectedPlaylistId());
-    if (!playlist || !window.confirm(`Supprimer la playlist « ${playlist.name} » ?`)) return;
-    this.service.deletePlaylist(playlist.id).subscribe({
-      next: () => {
-        this.playlists.update((items) => items.filter((item) => item.id !== playlist.id));
-        this.selectedPlaylistId.set('');
-        this.playlistMessage.set(`Playlist « ${playlist.name} » supprimée.`);
-      },
-      error: (error: unknown) => {
-        console.error('[TracksPage] Erreur de suppression de playlist', error);
-        this.playlistError.set(this.errorMessage(error, 'Impossible de supprimer cette playlist.'));
-      },
-    });
-  }
-
   enqueue(track: Track): void {
-    if (this.queue().some((item) => item.id === track.id) || this.currentTrack()?.id === track.id) {
-      this.queueMessage.set(`« ${track.title} » est déjà en lecture ou dans la file.`);
-      return;
-    }
-    this.queue.update((items) => [...items, track]);
-    this.recentlyQueuedTrackId.set(track.id);
-    if (this.queueAnimationTimeout) clearTimeout(this.queueAnimationTimeout);
-    this.queueAnimationTimeout = setTimeout(() => this.recentlyQueuedTrackId.set(null), 900);
-    this.queueMessage.set(`« ${track.title} » ajouté à la file d’attente.`);
+    this.playback.enqueue(track);
   }
 
   removeFromQueue(trackId: string): void {
-    this.queue.update((items) => items.filter((item) => item.id !== trackId));
+    this.playback.removeFromQueue(trackId);
   }
 
   playQueued(track: Track): void {
-    this.removeFromQueue(track.id);
-    this.play(track);
+    this.playback.playQueued(track);
   }
 
   private replacePlaylist(updated: Playlist): void {
     this.playlists.update((items) => items.map((item) => item.id === updated.id ? updated : item));
   }
 
-  private reanalyzeLegacyTrack(track: Track, blob: Blob): void {
-    this.waveformLoadingTrackId.set(track.id);
-    this.waveformErrorTrackId.set(null);
-    this.audioAnalysis.analyze(blob).then((analysis) => {
-      if (this.destroyed) return;
-      this.service.updateAnalysis(track.id, analysis).pipe(
-        finalize(() => this.waveformLoadingTrackId.set(null)),
-      ).subscribe({
-        next: (updatedTrack) => {
-          this.tracks.update((tracks) => tracks.map((item) => item.id === updatedTrack.id ? updatedTrack : item));
-          if (this.currentTrack()?.id === updatedTrack.id) this.currentTrack.set(updatedTrack);
-        },
-        error: (error: unknown) => {
-          console.error('[TracksPage] Impossible de sauvegarder l’analyse audio', error);
-          this.waveformLoadingTrackId.set(null);
-          this.waveformErrorTrackId.set(track.id);
-        },
-      });
-    }).catch((error: unknown) => {
-      console.error('[TracksPage] Impossible de réanalyser un ancien morceau', error);
-      this.waveformLoadingTrackId.set(null);
-      this.waveformErrorTrackId.set(track.id);
-    });
-  }
-
-  formatTime(seconds: number): string {
-    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60).toString().padStart(2, '0');
-    return `${minutes}:${remainingSeconds}`;
-  }
-
-  onAudioError(): void {
-    this.audioError.set('Le navigateur ne peut pas lire ce fichier audio. Il est peut-être endommagé ou son encodage n’est pas pris en charge.');
-    this.releaseAudio();
+  private metadataFromForm(
+    form: FormGroup<TrackMetadataControls> | FormGroup<TrackUploadControls>,
+  ): TrackMetadata {
+    const { bpm, key, tuning, genre, level } = form.controls;
+    return {
+      bpm: bpm.value,
+      key: key.value.trim(),
+      tuning: tuning.value.trim(),
+      genre: genre.value.trim(),
+      level: level.value,
+    };
   }
 
   private removeTrackLocally(track: Track): void {
     this.favorites.update((favorites) => favorites.filter((id) => id !== track.id));
-    this.removeFromQueue(track.id);
-    if (this.currentTrack()?.id !== track.id) return;
-    this.audioRequest?.unsubscribe();
-    this.releaseAudio();
-    this.currentTrack.set(null);
-    this.currentTime.set(0);
-    this.duration.set(0);
-    this.isPlaying.set(false);
+    this.playback.stopTrack(track.id);
   }
 
   formatSize(bytes: number): string {
@@ -582,13 +556,6 @@ export class TracksPageComponent {
     if (file.size === 0) return 'Le fichier audio est vide.';
     if (file.size > this.maxFileSize) return 'Le fichier dépasse la limite de 25 Mo.';
     return '';
-  }
-
-  private releaseAudio(): void {
-    const url = this.audioUrl();
-    if (url) URL.revokeObjectURL(url);
-    this.audioUrl.set('');
-    this.isPlaying.set(false);
   }
 
   private errorMessage(error: unknown, fallback: string): string {

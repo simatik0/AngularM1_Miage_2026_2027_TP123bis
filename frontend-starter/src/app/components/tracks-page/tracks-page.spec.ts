@@ -6,17 +6,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { authInterceptor } from '../../shared/interceptors/auth.interceptor';
 import { Track } from '../../shared/models/track.model';
 import { AuthService } from '../../shared/services/auth.service';
+import { AudioPlaybackService } from '../../shared/services/audio-playback.service';
 import { AudioAnalysisService } from '../../shared/services/audio-analysis.service';
+import { AudioPlayerComponent } from '../audio-player/audio-player';
 import { TracksPageComponent } from './tracks-page';
 
 describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
   let fixture: ComponentFixture<TracksPageComponent>;
   let component: TracksPageComponent;
   let http: HttpTestingController;
+  let playback: AudioPlaybackService;
   const track: Track = {
     id: 'track-1', title: 'Blues', originalName: 'blues.mp3',
     mimeType: 'audio/mpeg', size: 2048, createdAt: '2026-10-07T12:00:00Z',
-    bpm: 120, key: 'La mineur', waveform: Array.from({ length: 128 }, (_, index) => (index % 9) / 9),
+    bpm: 120, key: 'La mineur', tuning: 'E standard', genre: 'Blues', level: 'debutant',
+    waveform: Array.from({ length: 128 }, (_, index) => (index % 9) / 9),
   };
   const createObjectURL = vi.fn();
   const revokeObjectURL = vi.fn();
@@ -32,7 +36,7 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     });
 
     TestBed.configureTestingModule({
-      imports: [TracksPageComponent],
+      imports: [TracksPageComponent, AudioPlayerComponent],
       providers: [
         provideHttpClient(withInterceptors([authInterceptor])),
         provideHttpClientTesting(),
@@ -40,9 +44,9 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
           provide: AudioAnalysisService,
           useValue: {
             analyze: vi.fn().mockResolvedValue({
-              bpm: 128,
+              bpm: 110,
               key: 'Mi mineur',
-              waveform: Array.from({ length: 128 }, (_, index) => (index % 7) / 7),
+              waveform: Array.from({ length: 128 }, (_, index) => (index % 8) / 8),
             }),
           },
         },
@@ -50,6 +54,8 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
       ],
     });
     TestBed.inject(AuthService).token.set('synthetic-test-token');
+    playback = TestBed.inject(AudioPlaybackService);
+    playback.stop();
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(TracksPageComponent);
     component = fixture.componentInstance;
@@ -59,6 +65,7 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
 
   afterEach(() => {
     fixture.destroy();
+    playback.stop();
     http.verify();
     vi.unstubAllGlobals();
     localStorage.clear();
@@ -114,36 +121,60 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(fixture.nativeElement.textContent).toContain('120');
   });
 
-  it('crée une playlist et y ajoute la piste sélectionnée', () => {
+  it('enregistre manuellement le BPM et les informations musicales', () => {
     list();
-    component.playlistName.set('Répétition');
-    component.createPlaylist();
+    component.editMetadata(track);
+    component.metadataForm.setValue({
+      bpm: 135, key: 'Mi mineur', tuning: 'Drop D', genre: 'Rock', level: 'intermediaire',
+    });
+    component.saveMetadata(track);
+    const request = http.expectOne('/api/tracks/track-1');
+    expect(request.request.method).toBe('PUT');
+    expect(request.request.body).toEqual({
+      bpm: 135, key: 'Mi mineur', tuning: 'Drop D', genre: 'Rock', level: 'intermediaire',
+    });
+    request.flush({ ...track, bpm: 135, key: 'Mi mineur', tuning: 'Drop D', genre: 'Rock', level: 'intermediaire' });
+    expect(component.tracks()[0].bpm).toBe(135);
+    expect(component.metadataEditTrackId()).toBeNull();
+  });
+
+  it('crée une playlist depuis le menu contextuel et y ajoute automatiquement la piste', () => {
+    list();
+    const row = fixture.nativeElement.querySelector('.track-row') as HTMLElement;
+    const contextMenu = new MouseEvent('contextmenu', {
+      bubbles: true, cancelable: true, clientX: 50, clientY: 60,
+    });
+    row.dispatchEvent(contextMenu);
+    fixture.detectChanges();
+    const submenu = fixture.nativeElement.querySelector('.playlist-submenu summary') as HTMLElement;
+    submenu.click();
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('.create-playlist-option') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const input = fixture.nativeElement.querySelector('#new-playlist-name') as HTMLInputElement;
+    input.value = 'Répétition';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const form = fixture.nativeElement.querySelector('.playlist-dialog form') as HTMLFormElement;
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     const create = http.expectOne('/api/playlists');
     expect(create.request.method).toBe('POST');
     expect(create.request.body).toEqual({ name: 'Répétition' });
     create.flush({ id: 'playlist-1', name: 'Répétition', trackIds: [], createdAt: track.createdAt });
-    expect(component.selectedPlaylistId()).toBe('playlist-1');
-    component.addToPlaylist(track);
     const add = http.expectOne('/api/playlists/playlist-1/tracks');
     expect(add.request.body).toEqual({ trackId: track.id, action: 'add' });
     add.flush({
       id: 'playlist-1', name: 'Répétition', trackIds: [track.id], createdAt: track.createdAt,
     });
+    fixture.detectChanges();
     expect(component.playlists()[0].trackIds).toEqual([track.id]);
+    expect(component.playlistDialogOpen()).toBe(false);
   });
 
-  it('ajoute une piste par clic droit à la file et enchaîne automatiquement', () => {
+  it('ajoute une piste à la file et enchaîne automatiquement', () => {
     list();
-    fixture.detectChanges();
-    const card = fixture.nativeElement.querySelector('.track-card') as HTMLElement;
-    const contextMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
-    card.dispatchEvent(contextMenu);
-    expect(contextMenu.defaultPrevented).toBe(true);
-    fixture.detectChanges();
+    component.enqueue(track);
     expect(component.queue()).toEqual([track]);
-    expect(fixture.nativeElement.querySelector('.queue-panel').textContent).toContain('Blues');
-    expect(fixture.nativeElement.querySelector('.queue-added')).not.toBeNull();
-    component.onAudioEnded();
+    playback.onEnded();
     expect(component.queue()).toEqual([]);
     const request = http.expectOne('/api/tracks/track-1/audio');
     request.flush(new Blob(['audio'], { type: 'audio/mpeg' }));
@@ -171,6 +202,23 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('Blues');
     expect(fixture.nativeElement.textContent).not.toContain('Jazz');
+  });
+
+  it('présente les filtres dans un menu discret à côté de la recherche', () => {
+    list();
+    fixture.detectChanges();
+
+    const filterMenu = fixture.nativeElement.querySelector('.filter-menu') as HTMLDetailsElement;
+    expect(filterMenu.open).toBe(false);
+    expect(fixture.nativeElement.querySelector('.filter-tools')).toBeNull();
+
+    (filterMenu.querySelector('summary') as HTMLElement).click();
+    fixture.detectChanges();
+    const filterPanel = filterMenu.querySelector('.filter-menu__panel') as HTMLElement;
+    expect(filterMenu.open).toBe(true);
+    expect(filterPanel.textContent).toContain('Date d’ajout');
+    expect(filterPanel.textContent).toContain('BPM minimum');
+    expect(filterPanel.querySelector('.favorites-filter')).not.toBeNull();
   });
 
   it('demande confirmation avant de supprimer le fichier et sa piste puis actualise la page', () => {
@@ -235,14 +283,15 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     list();
     component.play(track);
     http.expectOne('/api/tracks/track-1/audio').flush(new Blob(['audio'], { type: 'audio/mpeg' }));
-    fixture.detectChanges();
+    const playerFixture = TestBed.createComponent(AudioPlayerComponent);
+    playerFixture.detectChanges();
 
-    const audio = fixture.nativeElement.querySelector('audio') as HTMLAudioElement;
+    const audio = playerFixture.nativeElement.querySelector('audio') as HTMLAudioElement;
     Object.defineProperty(audio, 'duration', { value: 120, configurable: true });
     Object.defineProperty(audio, 'currentTime', { value: 0, writable: true, configurable: true });
     audio.dispatchEvent(new Event('loadedmetadata'));
     fixture.detectChanges();
-    const seekbar = fixture.nativeElement.querySelector('.seekbar') as HTMLInputElement;
+    const seekbar = playerFixture.nativeElement.querySelector('.player-seek input') as HTMLInputElement;
     seekbar.value = '45';
     seekbar.dispatchEvent(new Event('input'));
     fixture.detectChanges();
@@ -251,8 +300,45 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(component.currentTime()).toBe(45);
     expect(component.duration()).toBe(120);
     expect(component.progressPercent()).toBe(37.5);
-    expect(component.formatTime(45)).toBe('0:45');
-    expect(component.formatTime(120)).toBe('2:00');
+    expect(playback.formatTime(45)).toBe('0:45');
+    expect(playback.formatTime(120)).toBe('2:00');
+    playerFixture.destroy();
+  });
+
+  it('démarre la lecture lorsque le fichier audio chargé devient lisible', () => {
+    list();
+    component.play(track);
+    http.expectOne('/api/tracks/track-1/audio').flush(new Blob(['audio'], { type: 'audio/mpeg' }));
+    const playerFixture = TestBed.createComponent(AudioPlayerComponent);
+    playerFixture.detectChanges();
+
+    const audio = playerFixture.nativeElement.querySelector('audio') as HTMLAudioElement;
+    const playAudio = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(audio, 'play', { configurable: true, value: playAudio });
+    audio.dispatchEvent(new Event('canplay'));
+    audio.dispatchEvent(new Event('canplay'));
+
+    expect(playAudio).toHaveBeenCalledOnce();
+    playerFixture.destroy();
+  });
+
+  it('garde la forme d’onde masquée et regroupe la file dans le lecteur flottant', () => {
+    list();
+    component.play(track);
+    http.expectOne('/api/tracks/track-1/audio').flush(new Blob(['audio'], { type: 'audio/mpeg' }));
+    playback.enqueue({ ...track, id: 'track-2', title: 'Jazz' });
+    const playerFixture = TestBed.createComponent(AudioPlayerComponent);
+    playerFixture.detectChanges();
+
+    expect(playerFixture.nativeElement.querySelector('.waveform')).toBeNull();
+    expect(playerFixture.nativeElement.querySelector('.player-tool').textContent).toContain('Forme d’onde');
+    const queueMenu = playerFixture.nativeElement.querySelector('.queue-menu') as HTMLDetailsElement;
+    expect(queueMenu.open).toBe(false);
+    (queueMenu.querySelector('summary') as HTMLElement).click();
+    playerFixture.detectChanges();
+    expect(queueMenu.open).toBe(true);
+    expect(queueMenu.textContent).toContain('Jazz');
+    playerFixture.destroy();
   });
 
   it('affiche une erreur de liste et permet de réessayer sans changer la page affichée', () => {
@@ -286,32 +372,36 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     http.expectNone(request => request.method === 'POST');
   });
 
-  it('analyse automatiquement BPM et tonalité puis envoie les résultats avec le fichier', async () => {
+  it('analyse le morceau, envoie les métadonnées puis réinitialise le formulaire et la première page', async () => {
     list(1, 2);
     component.go(2);
     list(2, 2);
     choose();
     component.title.setValue('  Mon blues  ');
-    const selectedFile = component.file();
-    const analysisService = TestBed.inject(AudioAnalysisService);
-    const uploadPromise = component.upload();
-    await component.upload();
-    await uploadPromise;
+    component.form.controls.bpm.setValue(128);
+    component.form.controls.genre.setValue('Blues');
+    const form = fixture.nativeElement.querySelector('form') as HTMLFormElement;
+    const submit = new Event('submit', { cancelable: true });
+    form.dispatchEvent(submit);
+    expect(submit.defaultPrevented).toBe(true);
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('button[type="submit"]').disabled).toBe(true);
     expect(fixture.nativeElement.querySelector('#audio-file').disabled).toBe(true);
     expect(component.title.disabled).toBe(true);
+    await vi.waitFor(() => expect(component.analysisStatus()).toContain('envoi'));
+    await component.upload();
     const request = http.expectOne('/api/tracks');
     const body = request.request.body as FormData;
     const keys: string[] = [];
     body.forEach((_value, key) => keys.push(key));
-    expect(keys).toEqual(['audio', 'title', 'bpm', 'key', 'waveform']);
+    expect(keys).toEqual(['audio', 'title', 'bpm', 'key', 'tuning', 'genre', 'level', 'waveform']);
     expect(body.get('audio')).toBeInstanceOf(File);
     expect(body.get('title')).toBe('Mon blues');
     expect(body.get('bpm')).toBe('128');
     expect(body.get('key')).toBe('Mi mineur');
+    expect(body.get('genre')).toBe('Blues');
     expect(JSON.parse(String(body.get('waveform')))).toHaveLength(128);
-    expect(analysisService.analyze).toHaveBeenCalledWith(selectedFile);
     expect(request.request.headers.has('Content-Type')).toBe(false);
     expect(request.request.reportProgress).toBe(true);
     request.event({ type: HttpEventType.UploadProgress, loaded: 50, total: 100 });
@@ -334,7 +424,8 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     list();
     choose();
     component.title.setValue('   ');
-    await component.upload();
+    component.upload();
+    await vi.waitFor(() => expect(component.analysisStatus()).toContain('envoi'));
     const request = http.expectOne('/api/tracks');
     expect(request.request.body.get('title')).toBe('blues.mp3');
     request.flush({ message: 'Format audio non accepté' }, { status: 400, statusText: 'Bad Request' });
@@ -342,12 +433,13 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('Format audio non accepté');
     expect(component.file()).not.toBeNull();
     expect(component.uploading()).toBe(false);
-    await component.upload();
+    component.upload();
+    await vi.waitFor(() => expect(component.analysisStatus()).toContain('envoi'));
     http.expectOne('/api/tracks').flush({ message: 'File too large' }, { status: 400, statusText: 'Bad Request' });
     expect(component.uploadError()).toContain('25 Mo');
   });
 
-  it('charge un Blob authentifié au clic et révoque les URL au remplacement et à la destruction', () => {
+  it('charge un Blob authentifié et conserve la lecture après la destruction de la page bibliothèque', () => {
     list();
     http.expectNone(request => request.url.endsWith('/audio'));
     component.play(track);
@@ -360,11 +452,27 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     component.play({ ...track, id: 'track-2' });
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:audio-1');
     http.expectOne('/api/tracks/track-2/audio').flush(new Blob(['audio']));
+    const playerFixture = TestBed.createComponent(AudioPlayerComponent);
+    playerFixture.detectChanges();
+    const audio = playerFixture.nativeElement.querySelector('audio') as HTMLAudioElement;
+    const playAudio = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(audio, 'play', { configurable: true, value: playAudio });
+    audio.dispatchEvent(new Event('canplay'));
+    audio.dispatchEvent(new Event('play'));
+    playerFixture.detectChanges();
     fixture.destroy();
+    expect(component.currentTrack()?.id).toBe('track-2');
+    expect(component.audioUrl()).toBe('blob:audio-2');
+    expect(component.isPlaying()).toBe(true);
+    expect(playerFixture.nativeElement.querySelector('audio')).not.toBeNull();
+    expect(playAudio).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:audio-2');
+    playback.stop();
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:audio-2');
+    playerFixture.destroy();
   });
 
-  it('annule un ancien téléchargement et le téléchargement en cours à la destruction', () => {
+  it('annule le téléchargement remplacé mais conserve le téléchargement en cours après navigation', () => {
     list();
     component.play(track);
     const first = http.expectOne('/api/tracks/track-1/audio');
@@ -372,8 +480,9 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(first.cancelled).toBe(true);
     const second = http.expectOne('/api/tracks/track-2/audio');
     fixture.destroy();
-    expect(second.cancelled).toBe(true);
-    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(second.cancelled).toBe(false);
+    second.flush(new Blob(['audio']));
+    expect(createObjectURL).toHaveBeenCalledOnce();
   });
 
   it('affiche un refus audio 404 et une erreur de décodage du lecteur', () => {
@@ -384,12 +493,29 @@ describe('Bibliothèque TD2 et TD3 (API simulée)', () => {
     expect(component.audioLoading()).toBe(false);
     component.play(track);
     http.expectOne('/api/tracks/track-1/audio').flush(new Blob(['audio']));
-    fixture.detectChanges();
-    const audio = fixture.nativeElement.querySelector('audio') as HTMLAudioElement;
+    const playerFixture = TestBed.createComponent(AudioPlayerComponent);
+    playerFixture.detectChanges();
+    const audio = playerFixture.nativeElement.querySelector('audio') as HTMLAudioElement;
     expect(audio.getAttribute('src')).toBe('blob:audio-1');
     audio.dispatchEvent(new Event('error'));
     expect(component.audioError()).toContain('ne peut pas lire');
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:audio-1');
     expect(component.audioUrl()).toBe('');
+    playerFixture.destroy();
+  });
+
+  it('affiche le diagnostic détaillé de l’API quand le fichier audio local est absent', async () => {
+    list();
+    component.play(track);
+    http.expectOne('/api/tracks/track-1/audio').flush(
+      new Blob(['{"message":"Fichier audio indisponible ; réimportez cette piste"}'], {
+        type: 'application/json',
+      }),
+      { status: 404, statusText: 'Not Found' },
+    );
+
+    await vi.waitFor(() => {
+      expect(component.audioError()).toBe('Fichier audio indisponible ; réimportez cette piste');
+    });
   });
 });

@@ -10,9 +10,9 @@ import { User } from "./models/User.js";
 import { Track } from "./models/Track.js";
 import { Playlist } from "./models/Playlist.js";
 import { RevokedToken } from "./models/RevokedToken.js";
+import { getAudioBucket, storeAudioFile } from "./audio-storage.js";
 
-// Les fichiers audio restent sur le disque du serveur dans ce TP.
-// MongoDB ne conserve que leurs métadonnées : titre, nom, taille, etc.
+// Le disque sert uniquement de zone temporaire avant le stockage audio dans GridFS.
 const UPLOADS = path.resolve("data/uploads");
 
 try {
@@ -159,24 +159,48 @@ function parseAudioAnalysis(body) {
   const bpm = body?.bpm === "" || body?.bpm === undefined || body?.bpm === null
     ? null
     : Number(body.bpm);
-  let waveform;
-  try {
-    waveform = JSON.parse(body?.waveform || "null");
-  } catch {
-    waveform = null;
+  const waveformProvided = body?.waveform !== undefined && body.waveform !== "";
+  let waveform = [];
+  if (waveformProvided) {
+    try {
+      waveform = JSON.parse(body.waveform);
+    } catch {
+      waveform = null;
+    }
   }
   const key = typeof body?.key === "string" ? body.key.trim() : "";
   if (
     (bpm !== null && (!Number.isFinite(bpm) || bpm < 20 || bpm > 300)) ||
     key.length > 24 ||
-    !Array.isArray(waveform) || waveform.length !== 128 ||
-    waveform.some((point) => typeof point !== "number" || !Number.isFinite(point) || point < 0 || point > 1)
+    (waveformProvided && (
+      !Array.isArray(waveform) || waveform.length !== 128 ||
+      waveform.some((point) => typeof point !== "number" || !Number.isFinite(point) || point < 0 || point > 1)
+    ))
   ) {
     const error = new Error("Analyse audio invalide");
     error.status = 400;
     throw error;
   }
   return { bpm, key, waveform };
+}
+
+function parseTrackMetadata(body) {
+  const tuning = typeof body?.tuning === "string" ? body.tuning.trim() : "";
+  const genre = typeof body?.genre === "string" ? body.genre.trim() : "";
+  const level = typeof body?.level === "string" ? body.level : "";
+  if (
+    (body?.tuning !== undefined && typeof body.tuning !== "string") ||
+    (body?.genre !== undefined && typeof body.genre !== "string") ||
+    (body?.level !== undefined && typeof body.level !== "string") ||
+    tuning.length > 32 ||
+    genre.length > 40 ||
+    !["", "debutant", "intermediaire", "avance"].includes(level)
+  ) {
+    const error = new Error("Métadonnées musicales invalides");
+    error.status = 400;
+    throw error;
+  }
+  return { tuning, genre, level };
 }
 
 /**
@@ -449,6 +473,9 @@ export function createApp() {
         id: String(track._id),
         bpm: track.bpm ?? null,
         key: track.key || "",
+        tuning: track.tuning || "",
+        genre: track.genre || "",
+        level: track.level || "",
         waveform: track.waveform || [],
         _id: undefined,
       }));
@@ -478,8 +505,8 @@ export function createApp() {
    * Le middleware auth vérifie le JWT avant d'accepter l'upload.
    * Le middleware upload.single("audio") traite le fichier audio envoyé dans le champ "audio" du formulaire
    * ou de l'appel depuis le frontend avec un objet FormData.
-   * Le serveur stocke le fichier audio sur le disque et l'analyse ainsi que les
-   * métadonnées sont enregistrées dans MongoDB.
+   * Le fichier est temporairement reçu sur disque, puis enregistré dans GridFS
+   * avec son analyse et ses métadonnées dans MongoDB.
    */
   app.post(
     "/api/tracks",
@@ -493,34 +520,42 @@ export function createApp() {
         }
 
         const analysis = parseAudioAnalysis(req.body);
-        const track = await Track.create({
-          ownerId: req.auth.sub,
-          title: req.body.title || req.file.originalname,
-          originalName: req.file.originalname,
-          storedName: req.file.filename,
-          mimeType: req.file.mimetype,
-          size: req.file.size,
-          ...analysis,
-        });
+        const metadata = parseTrackMetadata(req.body);
+        const audioFileId = await storeAudioFile(req.file, req.auth.sub);
+        let track;
+        try {
+          track = await Track.create({
+            ownerId: req.auth.sub,
+            title: req.body.title || req.file.originalname,
+            originalName: req.file.originalname,
+            audioFileId,
+            mimeType: req.file.mimetype,
+            size: req.file.size,
+            ...analysis,
+            ...metadata,
+          });
+        } catch (error) {
+          try {
+            await getAudioBucket().delete(audioFileId);
+          } catch (cleanupError) {
+            console.error(`[tracks] Impossible de supprimer l’audio orphelin ${audioFileId}`, cleanupError);
+          }
+          throw error;
+        }
 
         console.log(`[tracks] Upload enregistré : ${track.id}`);
         res.status(201).json(track.toPublic());
       } catch (error) {
         console.error("[tracks] Erreur après l'enregistrement du fichier", error);
 
-        // Si MongoDB échoue après l'écriture sur disque, on tente de nettoyer
-        // le fichier orphelin. L'erreur de nettoyage est elle aussi loguée.
         if (req.file) {
-          const uploadedPath = path.join(UPLOADS, req.file.filename);
           try {
-            await fsPromises.unlink(uploadedPath);
-            console.log(`[tracks] Fichier temporaire supprimé : ${uploadedPath}`);
+            await fsPromises.unlink(req.file.path);
+            console.log(`[tracks] Fichier temporaire supprimé : ${req.file.path}`);
           } catch (cleanupError) {
-            console.error(
-              `[tracks] Impossible de supprimer le fichier temporaire ${uploadedPath}`,
-              cleanupError,
-            );
-            return next(cleanupError);
+            if (cleanupError?.code !== "ENOENT") {
+              console.error(`[tracks] Impossible de supprimer le fichier temporaire ${req.file.path}`, cleanupError);
+            }
           }
         }
         next(error);
@@ -544,6 +579,24 @@ export function createApp() {
         }
         updates.key = req.body.key;
       }
+      if (Object.hasOwn(req.body || {}, "tuning")) {
+        if (typeof req.body.tuning !== "string" || req.body.tuning.length > 32) {
+          return res.status(400).json({ message: "Accordage invalide" });
+        }
+        updates.tuning = req.body.tuning;
+      }
+      if (Object.hasOwn(req.body || {}, "genre")) {
+        if (typeof req.body.genre !== "string" || req.body.genre.length > 40) {
+          return res.status(400).json({ message: "Genre invalide" });
+        }
+        updates.genre = req.body.genre;
+      }
+      if (Object.hasOwn(req.body || {}, "level")) {
+        if (!["", "debutant", "intermediaire", "avance"].includes(req.body.level)) {
+          return res.status(400).json({ message: "Niveau invalide" });
+        }
+        updates.level = req.body.level;
+      }
       if (Object.hasOwn(req.body || {}, "waveform")) {
         if (
           !Array.isArray(req.body.waveform) || req.body.waveform.length !== 128 ||
@@ -554,7 +607,7 @@ export function createApp() {
         updates.waveform = req.body.waveform;
       }
       if (!Object.keys(updates).length) {
-        return res.status(400).json({ message: "Aucune analyse audio fournie" });
+        return res.status(400).json({ message: "Aucune métadonnée ou analyse audio fournie" });
       }
       const track = await Track.findOneAndUpdate(
         { _id: req.params.id, ownerId: req.auth.sub },
@@ -635,20 +688,39 @@ export function createApp() {
       const track = await Track.findOne({
         _id: req.params.id,
         ownerId: req.auth.sub,
-      }).select("+storedName");
+      }).select("+storedName +audioFileId");
 
       if (!track) {
         console.warn(`[tracks] Audio introuvable ou interdit : ${req.params.id}`);
         return res.status(404).json({ message: "Piste inconnue" });
       }
 
-      const audioPath = path.join(UPLOADS, track.storedName);
       res.type(track.mimeType);
-      // Ce callback permet de loguer le succès ou l'erreur du transfert.
+      if (track.audioFileId) {
+        const audioStream = getAudioBucket().openDownloadStream(track.audioFileId);
+        audioStream.on("error", (error) => {
+          console.error(`[tracks] Erreur de lecture GridFS ${track.id}`, error);
+          if (!res.headersSent) next(error);
+          else res.destroy(error);
+        });
+        audioStream.on("end", () => console.log(`[tracks] Audio GridFS envoyé : ${track.id}`));
+        audioStream.pipe(res);
+        return;
+      }
+
+      if (!track.storedName || path.basename(track.storedName) !== track.storedName) {
+        console.error(`[tracks] Aucun fichier audio valide associé à ${track.id}`);
+        return res.status(404).json({ message: "Fichier audio indisponible ; réimportez cette piste" });
+      }
+      const audioPath = path.join(UPLOADS, track.storedName);
       res.sendFile(audioPath, (error) => {
         if (error) {
           console.error(`[tracks] Erreur d'envoi audio ${track.id}`, error);
-          if (!res.headersSent) next(error);
+          if (!res.headersSent && error.code === "ENOENT") {
+            res.status(404).json({ message: "Fichier audio indisponible ; réimportez cette piste" });
+          } else if (!res.headersSent) {
+            next(error);
+          }
           return;
         }
         console.log(`[tracks] Audio envoyé : ${track.id}`);
@@ -665,14 +737,34 @@ export function createApp() {
       const track = await Track.findOne({
         _id: req.params.id,
         ownerId: req.auth.sub,
-      }).select("+storedName");
+      }).select("+storedName +audioFileId");
 
       if (!track) {
         console.warn(`[tracks] Suppression impossible : ${req.params.id}`);
         return res.status(404).json({ message: "Piste inconnue" });
       }
 
-      if (path.basename(track.storedName) !== track.storedName) {
+      if (track.audioFileId) {
+        const deletion = await Track.deleteOne({
+          _id: track._id,
+          ownerId: req.auth.sub,
+        });
+        if (deletion.deletedCount === 0) {
+          return res.status(404).json({ message: "Piste inconnue" });
+        }
+        try {
+          await getAudioBucket().delete(track.audioFileId);
+        } catch (error) {
+          console.error(`[tracks] Métadonnée supprimée mais audio GridFS conservé pour ${track.id}`, error);
+          return res.status(500).json({
+            message: "La piste est supprimée, mais le fichier audio n’a pas pu être effacé de MongoDB",
+          });
+        }
+        console.log(`[tracks] Piste et audio GridFS supprimés : ${track.id}`);
+        return res.status(204).end();
+      }
+
+      if (!track.storedName || path.basename(track.storedName) !== track.storedName) {
         console.error(`[tracks] Nom de fichier stocké invalide pour ${track.id}`);
         return res.status(500).json({ message: "Impossible de supprimer ce fichier audio" });
       }

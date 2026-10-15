@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Page } from '../models/page.model';
-import { Track, TrackAnalysis } from '../models/track.model';
+import { Track, TrackAnalysis, TrackMetadata } from '../models/track.model';
 
 export interface Playlist {
   id: string;
@@ -21,12 +21,17 @@ export class TrackService {
     });
   }
 
-  upload(file: File, title: string, analysis: TrackAnalysis) {
+  upload(file: File, title: string, metadata: TrackMetadata, analysis: TrackAnalysis) {
     const body = new FormData();
     body.append('audio', file);
     body.append('title', title);
-    body.append('bpm', analysis.bpm === null ? '' : String(analysis.bpm));
-    body.append('key', analysis.key);
+    body.append('bpm', metadata.bpm === null
+      ? (analysis.bpm === null ? '' : String(analysis.bpm))
+      : String(metadata.bpm));
+    body.append('key', metadata.key || analysis.key);
+    body.append('tuning', metadata.tuning);
+    body.append('genre', metadata.genre);
+    body.append('level', metadata.level);
     body.append('waveform', JSON.stringify(analysis.waveform));
     return this.http.post<Track>('/api/tracks', body, {
       observe: 'events',
@@ -46,6 +51,10 @@ export class TrackService {
 
   updateAnalysis(id: string, analysis: TrackAnalysis) {
     return this.http.put<Track>(`/api/tracks/${id}`, analysis);
+  }
+
+  updateMetadata(id: string, metadata: TrackMetadata) {
+    return this.http.put<Track>(`/api/tracks/${id}`, metadata);
   }
 
   playlists() {

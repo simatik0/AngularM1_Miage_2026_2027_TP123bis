@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import crypto from "node:crypto";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
+import { Readable, Writable } from "node:stream";
 import { createApp } from "../src/app.js";
 import { User } from "../src/models/User.js";
 import { Track } from "../src/models/Track.js";
@@ -93,7 +94,7 @@ test("schémas Mongoose et relation", async () => {
   );
 });
 
-test("mise à jour authentifiée des résultats d'analyse audio", async () => {
+test("mise à jour authentifiée des analyses et métadonnées musicales", async () => {
   const originalFindOneAndUpdate = Track.findOneAndUpdate;
   const originalExists = RevokedToken.exists;
   const ownerId = new mongoose.Types.ObjectId();
@@ -101,6 +102,9 @@ test("mise à jour authentifiée des résultats d'analyse audio", async () => {
   const expected = {
     bpm: 128,
     key: "La mineur",
+    tuning: "Drop D",
+    genre: "Rock",
+    level: "intermediaire",
     waveform: Array.from({ length: 128 }, (_, index) => (index % 8) / 8),
   };
   Track.findOneAndUpdate = async (filter, update, options) => {
@@ -260,7 +264,7 @@ test("suppression authentifiée efface la piste MongoDB et le fichier audio", as
   Track.findOne = (query) => {
     assert.deepEqual(query, { _id: String(trackId), ownerId: String(ownerId) });
     return { select: async (fields) => {
-      assert.equal(fields, "+storedName");
+      assert.equal(fields, "+storedName +audioFileId");
       return track;
     } };
   };
@@ -323,5 +327,130 @@ test("restaure le fichier audio si la suppression MongoDB échoue", async () => 
     await fsPromises.unlink(audioPath).catch((error) => {
       if (error.code !== "ENOENT") throw error;
     });
+  }
+});
+
+test("stocke un upload audio dans GridFS et le restitue avec l'autorisation du propriétaire", async () => {
+  const originalCreate = Track.create;
+  const originalFindOne = Track.findOne;
+  const originalExists = RevokedToken.exists;
+  const originalDatabase = mongoose.connection.db;
+  const originalGridFSBucket = Object.getOwnPropertyDescriptor(mongoose.mongo, "GridFSBucket");
+  const database = {};
+  const files = new Map();
+  const ownerId = new mongoose.Types.ObjectId();
+  const trackId = new mongoose.Types.ObjectId();
+  const secret = process.env.JWT_SECRET || "tp1-development-secret";
+  const value = jwt.sign({ sub: String(ownerId) }, secret, { expiresIn: "2h" });
+
+  class FakeGridFSBucket {
+    constructor(actualDatabase, options) {
+      assert.equal(actualDatabase, database);
+      assert.equal(options.bucketName, "trackAudio");
+    }
+
+    openUploadStream(filename, { id, contentType, metadata }) {
+      assert.equal(contentType, "audio/wav");
+      assert.equal(metadata.ownerId, String(ownerId));
+      const chunks = [];
+      return new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(Buffer.from(chunk));
+          callback();
+        },
+        final(callback) {
+          files.set(String(id), { filename, contentType, bytes: Buffer.concat(chunks) });
+          callback();
+        },
+      });
+    }
+
+    openDownloadStream(id) {
+      return Readable.from([files.get(String(id)).bytes]);
+    }
+  }
+
+  Object.defineProperty(mongoose.mongo, "GridFSBucket", {
+    configurable: true,
+    writable: true,
+    value: FakeGridFSBucket,
+  });
+  mongoose.connection.db = database;
+  RevokedToken.exists = async () => null;
+  Track.create = async (document) => {
+    assert.equal(document.ownerId, String(ownerId));
+    assert.ok(document.audioFileId instanceof mongoose.Types.ObjectId);
+    const stored = { ...document, id: String(trackId) };
+    return {
+      id: String(trackId),
+      toPublic: () => ({
+        id: String(trackId),
+        ownerId: String(ownerId),
+        title: stored.title,
+        originalName: stored.originalName,
+        mimeType: stored.mimeType,
+        size: stored.size,
+        bpm: stored.bpm,
+        key: stored.key,
+        tuning: stored.tuning,
+        genre: stored.genre,
+        level: stored.level,
+        waveform: stored.waveform,
+      }),
+    };
+  };
+  Track.findOne = (query) => {
+    assert.deepEqual(query, { _id: String(trackId), ownerId: String(ownerId) });
+    return {
+      select: async (fields) => {
+        assert.equal(fields, "+storedName +audioFileId");
+        return {
+          id: String(trackId),
+          mimeType: "audio/wav",
+          audioFileId: [...files.keys()][0],
+        };
+      },
+    };
+  };
+
+  try {
+    const form = new FormData();
+    form.set("audio", new Blob(["shared audio"], { type: "audio/wav" }), "sample.wav");
+    form.set("title", "sample-3s-96khz.wav");
+    form.set("bpm", "96");
+    form.set("key", "Do majeur");
+    form.set("waveform", JSON.stringify(Array.from({ length: 128 }, (_, index) => index / 128)));
+    form.set("tuning", "E standard");
+    form.set("genre", "Blues");
+    form.set("level", "debutant");
+    const upload = await fetch(`${base}/api/tracks`, {
+      method: "POST",
+      headers: new Headers({ authorization: ["Bearer", value].join(" ") }),
+      body: form,
+    });
+    assert.equal(upload.status, 201);
+    const uploadedTrack = await upload.json();
+    assert.equal(uploadedTrack.title, "sample-3s-96khz.wav");
+    assert.equal(uploadedTrack.bpm, 96);
+    assert.equal(uploadedTrack.key, "Do majeur");
+    assert.equal(uploadedTrack.tuning, "E standard");
+    assert.equal(uploadedTrack.genre, "Blues");
+    assert.equal(uploadedTrack.level, "debutant");
+    assert.equal(uploadedTrack.waveform.length, 128);
+    assert.equal(files.size, 1);
+    assert.equal([...files.values()][0].bytes.toString(), "shared audio");
+
+    const audio = await fetch(`${base}/api/tracks/${trackId}/audio`, {
+      headers: new Headers({ authorization: ["Bearer", value].join(" ") }),
+    });
+    assert.equal(audio.status, 200);
+    assert.equal(audio.headers.get("content-type"), "audio/wav");
+    assert.equal(await audio.text(), "shared audio");
+  } finally {
+    Track.create = originalCreate;
+    Track.findOne = originalFindOne;
+    RevokedToken.exists = originalExists;
+    mongoose.connection.db = originalDatabase;
+    Object.defineProperty(mongoose.mongo, "GridFSBucket", originalGridFSBucket);
   }
 });

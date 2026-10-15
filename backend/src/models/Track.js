@@ -1,9 +1,8 @@
 import mongoose from "mongoose";
 
 /*
- * Ce schéma conserve les métadonnées d'une piste. Le fichier audio lui-même
- * reste sur le disque ; storedName contient le nom technique utilisé côté
- * serveur et n'est jamais exposé par toPublic().
+ * Les octets audio sont stockés dans GridFS ; les anciens fichiers disque
+ * peuvent rester référencés par storedName pendant leur migration.
  */
 const schema = new mongoose.Schema(
   {
@@ -15,7 +14,8 @@ const schema = new mongoose.Schema(
     },
     title: { type: String, required: true, trim: true },
     originalName: { type: String, required: true },
-    storedName: { type: String, required: true, select: false },
+    storedName: { type: String, select: false },
+    audioFileId: { type: mongoose.Schema.Types.ObjectId, select: false },
     mimeType: { type: String, required: true },
     size: { type: Number, required: true, min: 0 },
     bpm: { type: Number, min: 20, max: 300, default: null },
@@ -28,6 +28,9 @@ const schema = new mongoose.Schema(
         message: "La forme d’onde ne peut pas dépasser 128 points",
       },
     },
+    tuning: { type: String, trim: true, maxlength: 32, default: "" },
+    genre: { type: String, trim: true, maxlength: 40, default: "" },
+    level: { type: String, enum: ["debutant", "intermediaire", "avance", ""], default: "" },
   },
   { timestamps: true },
 );
@@ -50,6 +53,9 @@ schema.methods.toPublic = function () {
     size: this.size,
     bpm: this.bpm ?? null,
     key: this.key || "",
+    tuning: this.tuning || "",
+    genre: this.genre || "",
+    level: this.level || "",
     waveform: this.waveform || [],
     createdAt: this.createdAt,
   };
