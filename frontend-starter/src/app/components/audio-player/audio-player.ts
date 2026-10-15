@@ -1,4 +1,4 @@
-import { Component, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { AudioPlaybackService } from '../../shared/services/audio-playback.service';
 
 @Component({
@@ -12,6 +12,11 @@ export class AudioPlayerComponent {
   readonly waveform = signal<number[]>([]);
   readonly waveformLoading = signal(false);
   readonly waveformError = signal('');
+  readonly waveformProgress = computed(() => {
+    const duration = this.playback.duration();
+    if (duration <= 0) return 0;
+    return Math.min(100, Math.max(0, (this.playback.currentTime() / duration) * 100));
+  });
   private readonly audioPlayer = viewChild<ElementRef<HTMLAudioElement>>('audioPlayer');
 
   onCanPlay(): void {

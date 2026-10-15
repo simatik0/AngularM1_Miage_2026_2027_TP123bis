@@ -42,7 +42,7 @@
     <div class="player-tools">
       <button class="player-tool" type="button" (click)="openWaveform()">Forme d’onde</button>
       <details class="queue-menu">
-        <summary>File ({{ playback.queue().length }})</summary>
+        <summary>File d’attente ({{ playback.queue().length }})</summary>
         <div class="queue-dropdown">
           <div class="queue-heading">
             <strong>File d’attente</strong>
@@ -85,10 +85,16 @@
       } @else if (waveformError()) {
         <p class="player-error" role="alert">{{ waveformError() }}</p>
       } @else {
-        <div class="waveform" role="img" aria-label="Forme d’onde du morceau">
-          @for (height of waveform(); track $index) {
-            <i [style.height.%]="height"></i>
-          }
+        <div class="waveform" role="img"
+          [attr.aria-label]="'Forme d’onde, position ' + formatTime(playback.currentTime()) + ' sur ' + formatTime(playback.duration())">
+          <div class="waveform-track">
+            <div class="waveform-bars">
+              @for (height of waveform(); track $index) {
+                <i [style.height.%]="height"></i>
+              }
+            </div>
+            <span class="waveform-playhead" [style.left.%]="waveformProgress()" aria-hidden="true"></span>
+          </div>
         </div>
       }
     </section>

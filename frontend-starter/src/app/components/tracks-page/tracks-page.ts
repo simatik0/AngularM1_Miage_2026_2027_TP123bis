@@ -18,10 +18,6 @@ type TrackMetadataControls = {
   level: FormControl<Track['level']>;
 };
 
-type TrackUploadControls = TrackMetadataControls & {
-  title: FormControl<string>;
-};
-
 @Component({
   imports: [DatePipe, ReactiveFormsModule, SnackBarComponent],
   templateUrl: './tracks-page.html',
@@ -137,11 +133,6 @@ export class TracksPageComponent {
   );
   readonly form = new FormGroup({
     title: new FormControl('', { nonNullable: true }),
-    bpm: new FormControl<number | null>(null),
-    key: new FormControl('', { nonNullable: true }),
-    tuning: new FormControl('', { nonNullable: true }),
-    genre: new FormControl('', { nonNullable: true }),
-    level: new FormControl<Track['level']>('', { nonNullable: true }),
   });
   readonly title = this.form.controls.title;
   readonly file = signal<File | null>(null);
@@ -194,12 +185,6 @@ export class TracksPageComponent {
     this.uploadSuccess.set('');
     this.uploadError.set(this.validateFile(file));
     if (!file || this.uploadError()) return;
-    const uploadMetadata = this.metadataFromForm(this.form);
-    if (uploadMetadata.bpm !== null && (uploadMetadata.bpm < 20 || uploadMetadata.bpm > 300)) {
-      this.uploadError.set('Le BPM doit être compris entre 20 et 300.');
-      return;
-    }
-
     this.uploading.set(true);
     this.analysisStatus.set('Analyse audio en cours…');
     this.uploadProgress.set(null);
@@ -224,7 +209,7 @@ export class TracksPageComponent {
 
     this.analysisStatus.set('Analyse terminée, envoi du morceau…');
     this.uploadProgress.set(0);
-    this.service.upload(file, title, uploadMetadata, analysis).pipe(
+    this.service.upload(file, title, analysis).pipe(
       takeUntilDestroyed(this.destroyRef),
       finalize(() => {
         this.uploading.set(false);
@@ -246,7 +231,6 @@ export class TracksPageComponent {
           }
           console.debug('[TracksPage] Piste envoyée', track.id);
           this.title.reset();
-          this.form.patchValue({ bpm: null, key: '', tuning: '', genre: '', level: '' });
           this.file.set(null);
           const input = this.fileInput()?.nativeElement;
           if (input) input.value = '';
@@ -351,7 +335,7 @@ export class TracksPageComponent {
     event.preventDefault();
     this.trackMenu.set(track);
     this.trackMenuX.set(Math.max(8, Math.min(event.clientX, window.innerWidth - 220)));
-    this.trackMenuY.set(Math.max(8, Math.min(event.clientY, window.innerHeight - 180)));
+    this.trackMenuY.set(Math.max(8, Math.min(event.clientY, window.innerHeight - 220)));
   }
 
   @HostListener('document:click', ['$event'])
@@ -526,7 +510,7 @@ export class TracksPageComponent {
   }
 
   private metadataFromForm(
-    form: FormGroup<TrackMetadataControls> | FormGroup<TrackUploadControls>,
+    form: FormGroup<TrackMetadataControls>,
   ): TrackMetadata {
     const { bpm, key, tuning, genre, level } = form.controls;
     return {
