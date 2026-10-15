@@ -10,6 +10,7 @@
     <nav class="main-nav" aria-label="Navigation principale">
       @if (auth.isAuthenticated()) {
         <a routerLink="/tracks" routerLinkActive="is-active">Bibliothèque</a>
+        <a routerLink="/playlists" routerLinkActive="is-active">Playlists</a>
         @if (auth.currentUser(); as user) {
           <div class="profile-menu">
             <button class="avatar-trigger" type="button" (click)="toggleProfileMenu()"
@@ -53,6 +54,9 @@
 <main #pageContainer>
   <router-outlet (activate)="animatePage()" />
 </main>
+@if (auth.isAuthenticated()) {
+  <app-audio-player />
+}
 <footer class="site-footer">
   <span>GUITAR PRACTICE CLOUD</span>
   <span>Façonné pour vos sessions.</span>

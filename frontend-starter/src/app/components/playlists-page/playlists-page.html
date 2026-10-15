@@ -1,0 +1,61 @@
+<section class="playlists-page" aria-labelledby="playlists-title">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">VOTRE COLLECTION</p>
+      <h1 id="playlists-title">Vos playlists<span>.</span></h1>
+      <p>Retrouvez ici toutes vos sélections musicales.</p>
+    </div>
+    <button type="button" class="refresh-button" (click)="load()" [disabled]="loading()">Actualiser</button>
+  </header>
+
+  @if (success()) { <p class="success" role="status">{{ success() }}</p> }
+  @if (actionError()) { <p class="error" role="alert">{{ actionError() }}</p> }
+  @if (loading()) {
+    <p role="status">Chargement des playlists…</p>
+  } @else if (error()) {
+    <p class="error" role="alert">{{ error() }}</p>
+  } @else if (playlists().length) {
+    <div class="playlist-list">
+      @for (playlist of playlists(); track playlist.id) {
+        <article class="playlist-card">
+          <header class="playlist-card__heading">
+            <div>
+              <h2>{{ playlist.name }}</h2>
+              <p>{{ playlist.trackIds.length }} piste{{ playlist.trackIds.length === 1 ? '' : 's' }}</p>
+            </div>
+            <div class="playlist-card__actions">
+              <button type="button" (click)="playPlaylist(playlist)" [disabled]="!tracksFor(playlist).length">
+                Lire la playlist
+              </button>
+              <button type="button" class="delete-button" (click)="deletePlaylist(playlist)">Supprimer</button>
+            </div>
+          </header>
+          @if (tracksFor(playlist).length) {
+            <ul>
+              @for (track of tracksFor(playlist); track track.id) {
+                <li>
+                  <button type="button" class="playlist-track" (click)="play(track)">
+                    <span aria-hidden="true">▶</span>
+                    <span>{{ track.title }}</span>
+                    <small>{{ track.originalName }}</small>
+                  </button>
+                  <button type="button" class="remove-button" (click)="removeTrack(playlist, track)"
+                    [attr.aria-label]="'Retirer ' + track.title + ' de ' + playlist.name">×</button>
+                </li>
+              }
+            </ul>
+          } @else {
+            <p class="empty-playlist">Cette playlist est encore vide.</p>
+          }
+        </article>
+      }
+    </div>
+  } @else {
+    <div class="empty-state">
+      <span aria-hidden="true">♫</span>
+      <h2>Aucune playlist pour le moment</h2>
+      <p>Depuis la bibliothèque, faites un clic droit sur une piste pour l’ajouter à une playlist.</p>
+      <a routerLink="/tracks">Aller à la bibliothèque</a>
+    </div>
+  }
+</section>

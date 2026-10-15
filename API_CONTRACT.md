@@ -2,7 +2,7 @@
 
 Base : `/api`. Sauf inscription et connexion, envoyer `Authorization: Bearer <token>`.
 
-Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utilise Mongoose et MongoDB. MongoDB conserve les utilisateurs et métadonnées ; les octets des fichiers audio restent sur le disque du serveur.
+Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utilise Mongoose et MongoDB. MongoDB conserve les utilisateurs et métadonnées. Les octets des fichiers audio sont stockés dans GridFS, dans la même base, afin qu’ils restent disponibles depuis chaque instance du serveur. Les anciens fichiers locaux sont migrés vers GridFS au démarrage lorsqu’ils sont encore présents dans `backend/data/uploads`.
 
 | Méthode | Route | Requête | Réponse principale |
 |---|---|---|---|
@@ -20,7 +20,7 @@ Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utili
 | POST | `/tracks` | multipart : `audio`, `title`, `bpm?`, `key?`, `tuning?`, `genre?`, `level?` | `201 Track` |
 | PUT | `/tracks/:id` | JWT, métadonnées `{bpm,key,tuning,genre,level}` | `200 Track` |
 | GET | `/tracks/:id/audio` | JWT | flux audio |
-| DELETE | `/tracks/:id` | JWT, piste appartenant à l'utilisateur | `204` ; supprime les métadonnées MongoDB et le fichier audio du disque |
+| DELETE | `/tracks/:id` | JWT, piste appartenant à l'utilisateur | `204` ; supprime les métadonnées MongoDB et le fichier audio de GridFS (ou le fichier disque historique) |
 | GET | `/playlists` | JWT | `200 Playlist[]` appartenant à l'utilisateur |
 | POST | `/playlists` | JWT, `{name}` | `201 Playlist` |
 | PUT | `/playlists/:id/tracks` | JWT, `{trackId,action}` (`add` ou `remove`) | `200 Playlist` |
@@ -30,7 +30,7 @@ Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utili
 
 `User` inclut `bio` et `hasProfileImage`, sans exposer les octets de la photo ni le mot de passe. La photo est enregistrée comme donnée binaire et son type MIME dans le document utilisateur MongoDB. Une `Playlist` privée inclut `id`, `name`, `trackIds` et `createdAt`.
 
-Erreurs courantes : `400` validation, `401` authentification, `404` ressource ou piste absente/non autorisée, `409` email déjà utilisé. La suppression renvoie `500` si le serveur ne peut pas garantir l'effacement du fichier audio.
+Erreurs courantes : `400` validation, `401` authentification, `404` ressource ou piste absente/non autorisée, `409` email déjà utilisé. La suppression renvoie `500` si le serveur ne peut pas effacer le fichier audio de GridFS ou disque.
 
 `POST /auth/logout` exige un JWT valide, sans corps de requête. Le serveur
 enregistre son empreinte jusqu'à son expiration afin de refuser son utilisation

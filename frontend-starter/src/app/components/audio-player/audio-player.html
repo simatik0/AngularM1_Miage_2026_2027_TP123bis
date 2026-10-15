@@ -1,0 +1,96 @@
+@if (playback.currentTrack(); as track) {
+  <section class="floating-player" aria-label="Lecteur audio">
+    @if (playback.audioUrl()) {
+      <audio #audioPlayer [src]="playback.audioUrl()" [volume]="playback.volume()"
+        [playbackRate]="playback.playbackRate()" [loop]="playback.repeatTrack()" preload="metadata"
+        (canplay)="onCanPlay()" (loadedmetadata)="onTimeUpdate()" (timeupdate)="onTimeUpdate()"
+        (play)="playback.onPlaybackChange(true)" (pause)="playback.onPlaybackChange(false)"
+        (ended)="playback.onEnded()" (error)="playback.onError()"></audio>
+    }
+    <div class="player-track">
+      <span class="player-indicator" [class.is-playing]="playback.isPlaying()" aria-hidden="true"></span>
+      <div class="player-track__copy">
+        <span class="player-track__status">{{ playback.isPlaying() ? 'EN LECTURE' : 'LECTEUR AUDIO' }}</span>
+        <strong>{{ track.title }}</strong>
+        @if (playback.audioLoading()) { <small>Chargement…</small> }
+      </div>
+    </div>
+    <div class="player-center">
+      <div class="player-seek">
+        <span>{{ formatTime(playback.currentTime()) }}</span>
+        <input type="range" min="0" [max]="playback.duration() || 0" step="0.1"
+          [value]="playback.currentTime()" [disabled]="playback.duration() <= 0" (input)="seek($event)"
+          [attr.aria-label]="'Position de lecture de ' + track.title" />
+        <span>{{ formatTime(playback.duration()) }}</span>
+      </div>
+      <div class="player-controls">
+        <button type="button" class="player-icon" (click)="toggleRepeat()"
+          [attr.aria-pressed]="playback.repeatTrack()" aria-label="Répéter la piste">↻</button>
+        <button type="button" class="player-play" (click)="togglePlayback()"
+          [disabled]="playback.audioLoading() || !playback.audioUrl()"
+          [attr.aria-label]="playback.isPlaying() ? 'Mettre en pause' : 'Reprendre la lecture'">
+          {{ playback.isPlaying() ? 'Ⅱ' : '▶' }}
+        </button>
+        <label class="player-speed">Vitesse
+          <select [value]="playback.playbackRate()" (change)="setPlaybackRate($event)" aria-label="Vitesse de lecture">
+            <option value="0.75">0,75×</option><option value="1">1×</option>
+            <option value="1.25">1,25×</option><option value="1.5">1,5×</option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="player-tools">
+      <button class="player-tool" type="button" (click)="openWaveform()">Forme d’onde</button>
+      <details class="queue-menu">
+        <summary>File ({{ playback.queue().length }})</summary>
+        <div class="queue-dropdown">
+          <div class="queue-heading">
+            <strong>File d’attente</strong>
+            <button type="button" (click)="playback.clearQueue()">Vider</button>
+          </div>
+          @if (playback.queue().length) {
+            <ol>
+              @for (queued of playback.queue(); track queued.id) {
+                <li>
+                  <button type="button" class="queue-track" (click)="playback.playQueued(queued)">{{ queued.title }}</button>
+                  <button type="button" class="queue-remove" (click)="playback.removeFromQueue(queued.id)"
+                    [attr.aria-label]="'Retirer ' + queued.title + ' de la file'">×</button>
+                </li>
+              }
+            </ol>
+          } @else {
+            <p>La file est vide.</p>
+          }
+        </div>
+      </details>
+      <label class="player-volume" aria-label="Volume">
+        <span aria-hidden="true">◖</span>
+        <input type="range" min="0" max="1" step="0.01" [value]="playback.volume()"
+          (input)="setVolume($event)" aria-label="Volume" />
+      </label>
+    </div>
+    @if (playback.audioError()) { <p class="player-error" role="alert">{{ playback.audioError() }}</p> }
+  </section>
+}
+
+@if (waveformOpen()) {
+  <div class="waveform-backdrop" (click)="closeWaveform()">
+    <section class="waveform-dialog" role="dialog" aria-modal="true" aria-labelledby="waveform-title"
+      (click)="$event.stopPropagation()">
+      <button type="button" class="waveform-close" aria-label="Fermer" (click)="closeWaveform()">×</button>
+      <p class="eyebrow">VISUALISATION AUDIO</p>
+      <h2 id="waveform-title">{{ playback.currentTrack()?.title }}</h2>
+      @if (waveformLoading()) {
+        <p role="status">Génération de la forme d’onde…</p>
+      } @else if (waveformError()) {
+        <p class="player-error" role="alert">{{ waveformError() }}</p>
+      } @else {
+        <div class="waveform" role="img" aria-label="Forme d’onde du morceau">
+          @for (height of waveform(); track $index) {
+            <i [style.height.%]="height"></i>
+          }
+        </div>
+      }
+    </section>
+  </div>
+}

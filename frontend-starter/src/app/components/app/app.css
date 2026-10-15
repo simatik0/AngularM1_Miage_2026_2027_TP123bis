@@ -21,7 +21,7 @@
 .theme-toggle { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.55rem; padding: 0.45rem 0.75rem; color: var(--text); font-size: 0.8rem; font-weight: 700; background: var(--surface); border-color: var(--line); border-radius: 999px; box-shadow: none; }
 .theme-toggle:hover { color: var(--pink-soft); background: var(--surface-soft); border-color: rgb(244 114 182 / 35%); box-shadow: 0 0 22px rgb(244 114 182 / 10%); }
 .theme-toggle__icon { color: var(--pink); font-size: 1.1rem; line-height: 1; }
-main { display: block; max-width: 1320px; min-height: calc(100vh - 142px); margin: 0 auto; padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1rem, 4vw, 3rem); }
+main { display: block; max-width: 1320px; min-height: calc(100vh - 142px); margin: 0 auto; padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1rem, 4vw, 3rem) 8rem; }
 .site-footer { display: flex; justify-content: space-between; gap: 1rem; max-width: 1320px; margin: auto; padding: 1.2rem clamp(1rem, 4vw, 3rem); color: var(--muted); font-size: 0.7rem; }
 .site-footer span:first-child { font-weight: 800; letter-spacing: 0.12em; }
 [data-theme='light'] .site-header { background: color-mix(in srgb, var(--page) 86%, transparent); }
@@ -32,7 +32,7 @@ main { display: block; max-width: 1320px; min-height: calc(100vh - 142px); margi
   .site-header { align-items: flex-start; flex-wrap: wrap; padding: 0.8rem 1rem; }
   .header-actions { flex: 1 1 100%; justify-content: space-between; gap: 0.5rem; }
   .main-nav { justify-content: flex-start; }
-  main { min-height: calc(100vh - 175px); }
+  main { min-height: calc(100vh - 175px); padding-bottom: 9rem; }
 }
 @media (max-width: 450px) {
   .header-actions { align-items: flex-start; }
