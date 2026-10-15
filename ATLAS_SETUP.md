@@ -57,7 +57,11 @@ npm start
 
 Ouvrez `http://localhost:3000/api/health`. Ca doit afficher {"status":"ok"}, ce qui prouve que le back-end nodeJS répond. Ca ne prouve pas que la connexion à la base de données s'est bien passée et que les données ont bien été créées.
 
-Normalement, le backend crée automatiquement le compte `demo@example.com` / `Demo1234!`. 
+Normalement, le backend crée automatiquement le compte `demo@example.com` / `Demo1234!`.
+
+Les métadonnées et les fichiers audio sont conservés dans MongoDB Atlas. Les fichiers utilisent GridFS : en plus de `tracks` et `users`, Atlas affiche les collections `trackAudio.files` et `trackAudio.chunks`. Ainsi, la lecture fonctionne depuis tout ordinateur qui se connecte au même backend et à la même base. Au premier démarrage après cette mise à jour, le backend migre les anciens fichiers présents dans son dossier local `backend/data/uploads`. Les anciennes pistes dont le fichier local est déjà perdu doivent être réimportées ; MongoDB ne peut pas reconstruire les octets audio à partir de leurs seules métadonnées.
+
+Chaque instance du backend doit être configurée avec le même `MONGODB_URI` et `JWT_SECRET`. Pour le compte démo, connectez-vous avec `demo@example.com` sur chaque appareil ; les pistes restent privées à ce compte.
 
 Retournez sur la page web de mongodb.com et cliquez le bouton "browse collections" qui est dans l'affichage du cluster. Ca doit vous mener vers un écran ou sur la gauche vous pouvez ouvrir le contenu de "cluster0", et vous devriez voir dans la liste qui s'affiche en dessous plusieurs bases de données dont guitar-practice-cloud. Si vous l'ouvre vous verrez à l'intérieur deux collections : tracks et users. Ce sont l'équivalent des tables dans une BD relationnelle. Cliquez sur "users" et vous devriez voir un user qui a été créé par défaut, qui a pour nom "demo". Vous pourrez voir son nom en clair dans le code source du back-end (fichier server.js)
 

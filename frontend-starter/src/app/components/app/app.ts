@@ -3,12 +3,13 @@ import { DOCUMENT } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../../shared/services/auth.service';
+import { AudioPlayerComponent } from '../audio-player/audio-player';
 
 type Theme = 'dark' | 'light';
 
 @Component({
   selector: 'app-root',
-  imports: [RouterLink, RouterLinkActive, RouterOutlet],
+  imports: [RouterLink, RouterLinkActive, RouterOutlet, AudioPlayerComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

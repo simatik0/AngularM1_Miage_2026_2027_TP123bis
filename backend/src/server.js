@@ -1,6 +1,9 @@
 import mongoose from "mongoose";
+import path from "node:path";
 import { createApp } from "./app.js";
 import { User } from "./models/User.js";
+import { Track } from "./models/Track.js";
+import { migrateLegacyAudio } from "./audio-storage.js";
 
 // Le port et l'URI viennent de l'environnement du backend, jamais d'Angular.
 const port = process.env.PORT || 3000;
@@ -45,6 +48,13 @@ try {
   }
 } catch (error) {
   console.error("[startup] Impossible de préparer le compte de démonstration", error);
+  throw error;
+}
+
+try {
+  await migrateLegacyAudio(Track, path.resolve("data/uploads"));
+} catch (error) {
+  console.error("[startup] Impossible de migrer les anciens fichiers audio vers MongoDB", error);
   throw error;
 }
 
