@@ -18,7 +18,7 @@
       <label for="profile-image">Photo de profil</label>
       <input #imageInput id="profile-image" type="file" accept="image/jpeg,image/png,image/webp"
         [disabled]="imageSaving()" (change)="chooseImage($event)" />
-      <small>JPG, PNG ou WebP · 2 Mo maximum. L’image est conservée dans votre base de données.</small>
+      <small>JPG, PNG ou WebP · 2 Mo maximum. Votre photo sera publique et visible par tous, même sans connexion.</small>
       @if (user.hasProfileImage) {
         <button class="button--refresh" type="button" [disabled]="imageSaving()" (click)="removeImage()">Supprimer la photo</button>
       }

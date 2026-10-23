@@ -423,6 +423,28 @@ export function createApp() {
     }
   });
 
+  app.get("/api/users/:userId/avatar", async (req, res, next) => {
+    try {
+      const user = await User.findById(req.params.userId).select(
+        "+profileImage +profileImageMimeType",
+      );
+      if (!user?.profileImage || !user.profileImageMimeType) {
+        return res.status(404).json({ message: "Aucune photo de profil" });
+      }
+      res
+        .type(user.profileImageMimeType)
+        .set("Cache-Control", "public, max-age=300")
+        .set("X-Content-Type-Options", "nosniff");
+      return res.send(user.profileImage);
+    } catch (error) {
+      console.error(
+        `[user] Erreur de lecture de la photo publique ${req.params.userId}`,
+        error,
+      );
+      return next(error);
+    }
+  });
+
   app.delete("/api/users/me/avatar", auth, async (req, res, next) => {
     try {
       const user = await User.findById(req.auth.sub).select("+profileImage +profileImageMimeType");

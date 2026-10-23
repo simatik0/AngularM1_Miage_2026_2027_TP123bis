@@ -4,6 +4,10 @@ Base : `/api`. Sauf inscription et connexion, envoyer `Authorization: Bearer <to
 
 Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utilise Mongoose et MongoDB. MongoDB conserve les utilisateurs et métadonnées. Les octets des fichiers audio sont stockés dans GridFS, dans la même base, afin qu’ils restent disponibles depuis chaque instance du serveur. Les anciens fichiers locaux sont migrés vers GridFS au démarrage lorsqu’ils sont encore présents dans `backend/data/uploads`.
 
+La consultation des autres ressources reste authentifiée, à l’exception de
+`GET /users/:userId/avatar`, public afin que les photos puissent être affichées
+aux visiteurs et aux futurs amis sans exposer les octets dans les réponses JSON.
+
 | Méthode | Route | Requête | Réponse principale |
 |---|---|---|---|
 | GET | `/health` | - | `{ "status": "ok" }` |
@@ -15,6 +19,7 @@ Le contrat HTTP ne dépend pas du choix de persistance : le backend fourni utili
 | PUT | `/users/me/profile` | JWT, `{name,bio}` | `200 User` ; bio limitée à 500 caractères |
 | PUT | `/users/me/avatar` | JWT, multipart `avatar` | `200 User` ; image JPEG, PNG ou WebP, 2 Mo max, stockée dans MongoDB |
 | GET | `/users/me/avatar` | JWT | flux image privé ; `404` si aucune image |
+| GET | `/users/:userId/avatar` | identifiant MongoDB dans l’URL, sans authentification | flux image public ; `404` si l’utilisateur ou sa photo n’existe pas |
 | DELETE | `/users/me/avatar` | JWT | `200 User` |
 | GET | `/tracks?page=1&limit=5` | JWT | `Page<Track>` |
 | POST | `/tracks` | JWT, multipart : `audio`, `title`, `bpm?`, `key?`, `waveform`, `tuning?`, `genre?`, `level?` | `201 Track` ; le navigateur analyse le son avant l’envoi, les valeurs BPM/tonalité saisies manuellement restent prioritaires |
