@@ -205,6 +205,15 @@ test("photo de profil est stockée et renvoyée depuis MongoDB", async () => {
     assert.equal(image.status, 200);
     assert.equal(image.headers.get("content-type"), "image/png");
     assert.equal(await image.text(), "profile photo");
+
+    const publicImage = await fetch(
+      `${base}/api/users/${ownerId}/avatar`,
+    );
+    assert.equal(publicImage.status, 200);
+    assert.equal(publicImage.headers.get("content-type"), "image/png");
+    assert.equal(publicImage.headers.get("cache-control"), "public, max-age=300");
+    assert.equal(publicImage.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(await publicImage.text(), "profile photo");
   } finally {
     User.findById = originalFindById;
     RevokedToken.exists = originalExists;
