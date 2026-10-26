@@ -112,6 +112,130 @@ progression visible dans l'interface.
 > a disparu de la liste ; cette réserve est conservée dans
 > [`preuves/tp3/verification.md`](./preuves/tp3/verification.md).
 
+## Fonctionnalités ajoutées au-delà des TP
+
+Les éléments ci-dessous complètent les parcours demandés. Ils sont conçus
+autour de l’usage d’une bibliothèque de backing tracks pour travailler un
+morceau et ne reposent pas sur un service d’analyse audio externe.
+
+### Analyse musicale automatique à l’import
+
+Avant l’envoi du fichier, le navigateur le décode avec l’API Web Audio
+(`AudioContext`). Le signal stéréo est ramené en mono pour appliquer les mêmes
+calculs à chaque canal. L’analyse est locale : seuls les résultats et le fichier
+audio sont ensuite transmis à l’API.
+
+- **Tempo (BPM)** : le signal est découpé en fenêtres d’environ 10 ms. Pour
+  chacune, le service calcule l’énergie RMS puis les variations positives
+  d’énergie, qui servent d’indice d’attaque. Il compare ces attaques par
+  autocorrélation pour des tempos de 55 à 200 BPM et retient le tempo au score
+  le plus élevé. Si le signal est trop court ou ne donne pas de résultat
+  exploitable, le BPM reste non renseigné.
+- **Tonalité** : une FFT est calculée sur des fenêtres de 4096 échantillons
+  (jusqu’aux 90 premières secondes). Les fréquences sont regroupées en 12
+  classes de notes, puis le profil obtenu est comparé à des profils de
+  référence majeur et mineur. Le meilleur score fournit une estimation de
+  tonalité, et non une transcription ou une garantie d’analyse musicale
+  parfaite.
+- **Forme d’onde** : les échantillons sont répartis en 128 segments. Le pic
+  d’amplitude de chaque segment est normalisé entre 0 et 1. Ces valeurs sont
+  conservées avec la piste pour représenter son signal dans la bibliothèque.
+
+L’interface désactive le formulaire pendant l’analyse et l’envoi, présente
+leur état, puis affiche la progression HTTP de l’upload. L’API valide les
+valeurs reçues avant de les enregistrer avec la piste.
+
+### Bibliothèque enrichie, filtres et favoris
+
+La recherche rapproche le texte saisi du titre et du nom d’origine du fichier.
+Les filtres combinables portent sur le format, la date d’ajout, une plage de
+BPM, la tonalité, l’accordage, le genre et le niveau ; le tri peut se faire par
+date récente/ancienne, titre ou tempo. Ces opérations sont calculées sur les
+pistes de la page actuellement chargée par la pagination serveur, et non sur
+les pages qui ne sont pas encore chargées.
+
+Le bouton cœur ajoute ou retire une piste des favoris et le filtre « Favoris »
+permet de ne garder que ces pistes. Dans cette version, la sélection des
+favoris reste en mémoire dans le composant de bibliothèque : elle est perdue
+en quittant cette page ou en rechargeant.
+
+Les BPM, tonalités, accordages, genres et niveaux restent modifiables
+manuellement depuis chaque piste. C’est notamment utile pour corriger une
+estimation automatique. Le formulaire vérifie les bornes du BPM puis envoie
+les métadonnées à l’API, qui les valide et les enregistre avec la piste.
+
+![Filtres et tri de la bibliothèque](./preuves/fonctionnalites/filtres-musicaux.png)
+
+### Playlists et file d’attente
+
+Depuis le menu d’options d’une piste (bouton `⋯` ou menu contextuel), il est
+possible de créer une playlist et d’y ajouter immédiatement cette piste, ou
+de choisir une playlist existante. Le nom est nettoyé et limité à 60
+caractères. Une playlist stocke son nom et les identifiants de ses pistes dans
+MongoDB, avec l’identifiant de son propriétaire ; l’API permet ensuite de
+lister les playlists du compte, d’ajouter ou retirer une piste et de supprimer
+une playlist.
+
+La page **Playlists** affiche les pistes enregistrées, permet de les lire
+individuellement ou de lancer la sélection dans son ordre. Elle propose aussi
+le retrait d’une piste, la suppression confirmée de la playlist et un état
+explicite lorsqu’elle est vide.
+
+![Playlist avec ses pistes et les actions de lecture, retrait et suppression](./preuves/fonctionnalites/playlists.png)
+
+La **file d’attente** appartient au lecteur global de la session. Une piste
+peut y être ajoutée depuis son menu, retirée individuellement ou supprimée de
+la file entière. Les doublons et la piste déjà en cours sont écartés. À la fin
+de la lecture, le lecteur retire la première piste de la file et la lance
+automatiquement. Cette file est en mémoire dans le navigateur et n’est pas
+conservée après fermeture ou rechargement.
+
+### Lecteur audio enrichi
+
+Le lecteur reste disponible en bas de l’interface pendant la navigation. Il
+charge l’audio authentifié comme `Blob`, crée une URL locale pour l’élément
+audio et révoque cette URL quand la piste change ou s’arrête. Les commandes
+ajoutées sont :
+
+- lecture/pause, déplacement dans le morceau et affichage du temps courant et
+  de la durée ;
+- réglage du volume, répétition de la piste et vitesse de lecture
+  (`0,75×`, `1×`, `1,25×` ou `1,5×`) ;
+- visualisation à la demande d’une forme d’onde : le lecteur décode le `Blob`,
+  calcule 96 pics d’amplitude et place un repère à partir du rapport entre le
+  temps courant et la durée ;
+- lecture automatique de la piste suivante lorsqu’une file d’attente n’est
+  pas vide.
+
+Les erreurs de chargement, de décodage et les formats non pris en charge sont
+signalés dans le lecteur au lieu d’être masqués.
+
+### Profil, photo et confort d’utilisation
+
+Le profil comprend une biographie (500 caractères maximum) et une photo
+facultative. L’image doit être au format JPG, PNG ou WebP et ne pas dépasser
+2 Mo. Le backend conserve les octets et le type MIME, permet de remplacer ou
+supprimer la photo, et expose une route de lecture publique ; la photo peut
+donc être affichée dans le menu de profil et sur les surfaces qui utilisent
+cette route.
+
+L’interface propose également un thème sombre ou clair, une navigation vers la
+bibliothèque et les playlists, ainsi qu’une transition légère entre les pages.
+Cette animation est désactivée si le navigateur signale une préférence pour
+les mouvements réduits. Le thème sélectionné est appliqué à l’interface
+courante, mais n’est pas mémorisé après un rechargement. La mise en page reste
+adaptée aux petits écrans.
+
+![Éditeur de photo de profil et règles de format et de taille](./preuves/fonctionnalites/profil-photo.png)
+
+> **À propos des captures** : les captures TP déjà présentes illustrent les
+> parcours vérifiés décrits plus haut. Les captures des filtres, playlists et
+> photo de profil montrent l’interface actuelle avec des données de
+> démonstration fournies par des réponses API simulées pour la capture ; elles
+> ne contiennent pas de données personnelles et ne prouvent pas la persistance
+> en base. Les échanges réels de l’API sont documentés séparément dans les
+> rapports de vérification.
+
 ## Grille de conformité aux TP
 
 | Consigne évaluée | Réalisation et vérification |
